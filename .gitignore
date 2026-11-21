@@ -1,0 +1,14 @@
+# SSH 私钥与敏感凭据
+*.pem
+*.key
+*token*
+*secret*
+apikey.txt
+.env
+.env.*
+
+# 含明文密码/密钥的迁移交接文档
+qq-bot-migration.md
+
+# macOS 系统文件
+.DS_Store

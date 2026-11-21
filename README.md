@@ -30,6 +30,7 @@
     ├── mouth.mjs                 # 可选「脑嘴分离」口语转译层（支持 DashScope / Gemini / OpenAI 兼容）
     ├── mouth-examples.json       # 可热更新的真人聊天 Few-Shot 样例库
     ├── vision-bridge.mjs         # 纯文本模型（如 deepseek-v4-pro）自动视觉桥接层（原生看图模型自动直通）
+    ├── reverse-image.mjs         # Serper Google Lens 以图搜图 + Google 搜索模块（专治无字人脸/剧照梗图反查）
     └── sync-vault.mjs            # 远程资产自动脱敏同步至私有 GitHub Vault + 生成图文画廊
 ```
 

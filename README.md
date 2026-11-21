@@ -4,7 +4,8 @@
 
 > **适合零背景 Agent 直接复现**：
 > - 完整 QQ 聊天宠物调优 SOP：[chat-pet-tuning-playbook.md](./chat-pet-tuning-playbook.md)（Step 0 到 Step 6）
-> - **独立可解耦「玩梗与接梗」模块指南**：[meme-engine-module.md](./meme-engine-module.md)（平台无关，可直接接入任意 QQ / Discord / Telegram / 微信 / 游戏 NPC / MCP 服务）
+> - **独立可解耦「玩梗与接梗」模块指南**：[meme-engine-module.md](./meme-engine-module.md)（平台无关，可直接接入任意聊天平台 / 游戏 NPC / MCP 服务）
+> - **独立可解耦「实时语音通话」模块指南**：[realtime-call-module.md](./realtime-call-module.md)（原生全双工通话、原声流式合成、瞬时打断零重叠、双向记忆打通，内核平台无关）
 
 ---
 
@@ -17,6 +18,7 @@
 | **彻底去人机味 & 弹性长度** | 「好的我记下了」「虽然…但是…」「最戳我的是…」、每轮卡死 1–2 行 | 拆掉 `coding agent` 开头与消息流 `管理员` 标签、保留长期记忆前提下切断陈年 AI 腔回音壁、放宽预设字数/连发门槛 |
 | **可选「脑嘴分离」层** | 换其他高助手腔模型时独立做熟人口语转译 | [`templates/mouth.mjs`](./templates/mouth.mjs) + [`templates/mouth-examples.json`](./templates/mouth-examples.json)（支持 DashScope / OpenAI 兼容 / Gemini 4 Hydrogen，默认可开关、超时自动回退） |
 | **独立「玩梗与接梗」模块** | AI 只会当百科科普、听不懂空耳黑话、认不出无字人脸梗图、定时抓老梗/小众梗 | **[`meme-engine-module.md`](./meme-engine-module.md)** + [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) + [`templates/reverse-image.mjs`](./templates/reverse-image.mjs)：4 层查梗（含 B 站+Serper 并发交叉佐证）+ Google Lens 以图搜图 + `replies`/`playTip` 接梗不科普 + **3 档破圈热度×生命力定时扩库** + MemeCub 自动配图（0 常驻内存、平台解耦） |
+| **独立「实时语音通话」模块** | 机器人只能发离线语音条、端到端模型丢原声、打断重音、通话与聊天记忆割裂 | **[`realtime-call-module.md`](./realtime-call-module.md)** + [`templates/call-engine.mjs`](./templates/call-engine.mjs) + [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs)：PulseAudio 双声卡物理零回声原生 QQ 接通 + 双层好友白名单 + 零工具轻量大脑 + 原声整句 SSE 拟人合成 + **80ms 预充 1x 节拍器**瞬时打断零重叠 + 聊天/通话双向记忆互通（仅 ~67 MB 内存） |
 | **私有资产库自动云端备份** | 梗库、梗图、记忆、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` 图文相册 |
 
 ---
@@ -28,7 +30,10 @@
 ├── README.md
 ├── chat-pet-tuning-playbook.md   # QQ 聊天宠物完整零背景复现 SOP（含验收标准与踩坑速查）
 ├── meme-engine-module.md         # 独立可解耦「玩梗与接梗」模块架构与新环境接入指南（平台无关）
+├── realtime-call-module.md       # 独立可解耦「实时语音通话」模块架构与新环境接入指南（平台无关）
 └── templates/
+    ├── call-engine.mjs           # 平台无关全双工通话内核（VAD / 按需 ASR / SSE TTS / 1x 节拍器 / 打断 / 记忆摘要）
+    ├── qq-call-adapter.mjs       # QQ 原生语音通话接入适配器与守护进程（PulseAudio / 双层白名单 / 音频桥接）
     ├── surf-kb.mjs               # 每日热点 + 4 层查梗链 + 3 档破圈热度×生命力选梗 + MemeCub 自动配图
     ├── reverse-image.mjs         # Serper Google Lens 以图搜图 + Google 搜索模块（支持 tbs 时间过滤）
     ├── mouth.mjs                 # 可选「脑嘴分离」口语转译层（支持 DashScope / Gemini / OpenAI 兼容）

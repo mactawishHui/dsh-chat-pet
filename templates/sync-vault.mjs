@@ -226,6 +226,8 @@ async function main() {
   writeFile(path.join(VAULT_DIR, 'DIARY.md'), buildDiaryMarkdown(diaries));
   const journal = readJsonl(path.join(BRIDGE_ROOT, 'state', 'life-journal.jsonl'));
   writeFile(path.join(VAULT_DIR, 'memory', 'life-journal.jsonl'), journal.map((r) => JSON.stringify(r)).join('\n') + (journal.length ? '\n' : ''));
+  const milestones = readJson(path.join(BRIDGE_ROOT, 'state', 'milestones.json'), null);
+  if (milestones) writeFile(path.join(VAULT_DIR, 'memory', 'milestones.json'), JSON.stringify(milestones, null, 2) + '\n');
   writeFile(path.join(VAULT_DIR, 'README.md'), buildReadme({ kb: kbPortable, feed, stickers, slang, memeFiles, drawFiles, diaryCount: diaries.length }));
 
   await git(['add', '-A']);

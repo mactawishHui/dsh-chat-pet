@@ -15,7 +15,7 @@ import path from 'node:path';
 export const JOURNAL_PATH = process.env.LIFE_JOURNAL_PATH || '/opt/qq-bridge/state/life-journal.jsonl';
 const KEEP_DAYS = 14;
 const MAX_FIELD = 300;
-export const JOURNAL_KINDS = new Set(['surf', 'meme', 'bilibili', 'news', 'draw', 'sing', 'call', 'thought', 'chat']);
+export const JOURNAL_KINDS = new Set(['surf', 'meme', 'bilibili', 'news', 'draw', 'sing', 'call', 'thought', 'chat', 'milestone']);
 
 /** 北京时间、凌晨 5 点换日的日期键：YYYY-MM-DD */
 export function lifeDayKey(ts = Date.now()) {
@@ -97,7 +97,7 @@ function maybePrune() {
 export function formatJournalForPrompt(rows) {
   const label = {
     surf: '刷手机看到', meme: '学到的梗', bilibili: '看了B站', news: '查了热点',
-    draw: '画了画', sing: '唱了歌', call: '打了电话', thought: '随手记的想法', chat: '聊天里'
+    draw: '画了画', sing: '唱了歌', call: '打了电话', thought: '随手记的想法', chat: '聊天里', milestone: '成长/新本事'
   };
   return rows.map((r) => {
     const t = new Date(r.at + 8 * 3600 * 1000).toISOString().slice(11, 16);

@@ -175,8 +175,8 @@ PY
 
 ### Step 2：模型选型与响应提速配置
 
-#### 2.1 模型与推理档（兼顾「说人话质感」与「低延迟」）
-在以下两处统一配置为 **`deepseek-v4-pro` + `reasoningEffort: low`**（`low` 档官方定位为 *routine or latency-sensitive tasks*，既保留思考能力又显著压缩延迟）：
+#### 2.1 模型与推理档（兼顾「原生多模态看图」「低延迟」与「说人话质感」）
+在以下两处统一配置为 **`deepseek-flash`（DeepSeek-V4.1-Flash）+ `reasoningEffort: low`**（实测在完成 Step 3–4 的去结构污染后，`deepseek-flash + low` 既具备自然松弛的聊天感、速度最快且最省额度，又**原生支持 `["text", "image"]` 全模态看图**，包括 QQ 聊天图、表情包、合并转发图以及 `bilibili_frames` 视频抽帧）：
 
 1. `/root/.dsh/profiles/web/cordis.patch.yml`：
    ```yaml
@@ -184,7 +184,7 @@ PY
      name: '@deepseek-ai/dsh-agent-default-model'
      config:
        provider: deepseek-account
-       model: deepseek-v4-pro
+       model: deepseek-flash
        reasoningEffort: low
    ```
 2. `/opt/qq-bridge/config.json` -> `dsh` 段：
@@ -192,11 +192,11 @@ PY
    "dsh": {
      "baseUrl": "http://127.0.0.1:3080",
      "provider": "deepseek-account",
-     "model": "deepseek-v4-pro",
+     "model": "deepseek-flash",
      "reasoningEffort": "low"
    }
    ```
-   *(若部署环境预算优先或追求极限速度，也可将 `model` 换为 `deepseek-flash`，保持 `reasoningEffort: low`。)*
+   *(若你想尝试纯文本旗舰模型 `deepseek-v4-pro`，请务必配合 `templates/vision-bridge.mjs` 用 `qwen3-omni-flash` 补齐 QQ 看图能力；切回原生看图模型时 `vision-bridge.mjs` 会自动静默直通原图。)*
 
 #### 2.2 压缩等待与发送延迟（`/opt/qq-bridge/config.json`）
 在 `socialV2` 中将等待和连发间隔调到真人打字节奏：

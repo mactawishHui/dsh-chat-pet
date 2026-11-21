@@ -11,7 +11,7 @@
 | 模块 | 解决的问题 | 关键方案 |
 | --- | --- | --- |
 | **小内存零成本优化** | 4G 服务器无 Swap、LinuxQQ 孤儿 `--relaunch` 进程泄漏导致 OOM | 2G `zram` (`zstd`) 压缩内存 + `NODE_OPTIONS=--max-old-space-size=384` + 精准清理孤儿 QQ 进程树（保留主进程零中断） |
-| **响应提速（40s → 6–11s）** | 首答硬等 10s、历史会话 `batchWindowMs=8000`、高推理档叠加延迟 | `minQuietAfterNewMs=2500`、`batchWindowMs=2000`、`deepseek-v4-pro` + `reasoningEffort: low` |
+| **响应提速（40s → 6–11s）** | 首答硬等 10s、历史会话 `batchWindowMs=8000`、高推理档叠加延迟 | `minQuietAfterNewMs=2500`、`batchWindowMs=2000`、`deepseek-flash`（保留原生全模态看图）+ `reasoningEffort: low` |
 | **彻底去人机味 & 弹性长度** | 「好的我记下了」「虽然…但是…」「最戳我的是…」、每轮卡死 1–2 行 | 拆掉 `coding agent` 开头与消息流 `管理员` 标签、保留长期记忆前提下切断陈年 AI 腔回音壁、放宽预设字数/连发门槛 |
 | **可选「脑嘴分离」层** | 换其他高助手腔模型时独立做熟人口语转译 | [`templates/mouth.mjs`](./templates/mouth.mjs) + [`templates/mouth-examples.json`](./templates/mouth-examples.json)（支持 DashScope / OpenAI 兼容 / Gemini 4 Hydrogen，默认可开关、超时自动回退） |
 | **自动刷热点 + 双引擎学梗 + 自动配梗图** | 聊天话题单一、听不懂最新短视频/B站/ACG 热梗 | [`templates/surf-kb.mjs`](./templates/surf-kb.mjs)：`systemd timer` 定时抓 B 站热门/豆瓣新片/全网热榜 + **B 站解梗 UP 主 & 萌娘百科**双引擎学梗 + `MemeCub` 自动配通用梗图/GIF（0 常驻内存） |
@@ -29,6 +29,7 @@
     ├── surf-kb.mjs               # 每日热点 + 4 层查梗链（本地/萌娘/B站/百炼）+ MemeCub 自动配图
     ├── mouth.mjs                 # 可选「脑嘴分离」口语转译层（支持 DashScope / Gemini / OpenAI 兼容）
     ├── mouth-examples.json       # 可热更新的真人聊天 Few-Shot 样例库
+    ├── vision-bridge.mjs         # 纯文本模型（如 deepseek-v4-pro）自动视觉桥接层（原生看图模型自动直通）
     └── sync-vault.mjs            # 远程资产自动脱敏同步至私有 GitHub Vault + 生成图文画廊
 ```
 

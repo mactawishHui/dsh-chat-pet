@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { serperGoogleSearch } from './reverse-image.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -111,24 +112,32 @@ async function lookupMemeViaBilibili(query) {
     snippets.push(`- [${it.author}] ${it.title} (${it.bvid})${desc ? ' | 简介: ' + desc : ''}`);
   }
 
-  // 拉取排名第 1 个科普视频的详情、标签和热评
-  let detail = null;
-  if (ranked[0]?.it?.bvid) {
-    await sleepMs(600);
-    detail = await fetchBiliVideoContext(ranked[0].it.bvid);
-  }
+  // 并发拉取排名第 1 个科普视频详情 + Serper Google 交叉佐证（防止 B 站标题党或敏感梗被过滤导致望文生义）
+  const [detail, googleHits] = await Promise.all([
+    (async () => {
+      if (!ranked[0]?.it?.bvid) return null;
+      await sleepMs(400);
+      return fetchBiliVideoContext(ranked[0].it.bvid);
+    })(),
+    serperGoogleSearch(`${query} 是什么梗 出处`, { num: 4 }).catch(() => [])
+  ]);
+
+  const googleSection = Array.isArray(googleHits) && googleHits.length
+    ? `\n全网（知乎/百科/B站）交叉佐证摘要：\n${googleHits.map((x, i) => `${i + 1}. ${x.title} — ${x.snippet}`).join('\n')}`
+    : '';
 
   const evidence = [
     `用户查询的梗：${query}`,
     `B站搜索「${kw}」命中的视频列表：`,
     ...snippets,
-    detail ? `\n重点科普视频详情：\n标题：${detail.title}\nUP主：${detail.author}\n链接：${detail.url}\n简介：${detail.desc}\n标签：${detail.tags.join('、')}\n热评：\n${detail.comments.map((c) => '  * ' + c).join('\n')}` : ''
+    detail ? `\n重点科普视频详情：\n标题：${detail.title}\nUP主：${detail.author}\n链接：${detail.url}\n简介：${detail.desc}\n标签：${detail.tags.join('、')}\n热评：\n${detail.comments.map((c) => '  * ' + c).join('\n')}` : '',
+    googleSection
   ].filter(Boolean).join('\n');
 
   const sys = [
-    '你是 B 站与中文互联网热梗解析器。严格依据下面真实的 B 站搜索结果、视频标签与热评提炼梗知识 JSON。',
+    '你是 B 站与中文互联网热梗解析器。严格依据下面真实的 B 站搜索结果、视频标签、热评与全网交叉佐证提炼梗知识 JSON。',
     '要求：',
-    '1. 若搜索到的视频和用户问的梗毫不相干、根本看不出这个梗是什么，必须返回 {"found": false}，绝不瞎编！',
+    '1. 严禁望文生义（例如把日语空耳按中文字面乱解），也严禁把毫不相干的动漫角色/台词张冠李戴！若全网交叉佐证给出了明确出处（含空耳/鬼畜/恶搞语境），必须以交叉佐证为准；线索不足或毫不相干则返回 {"found": false}。',
     '2. 若确切能从视频标题/标签/热评中确认这个梗，严格只输出 JSON 对象：',
     '- found: true',
     '- name: 字符串（最常用的梗名）',
@@ -136,6 +145,7 @@ async function lookupMemeViaBilibili(query) {
     '- origin: 字符串（结合视频线索总结的具体出处/背景，≤80字）',
     '- meaning: 字符串（核心笑点/情绪含义，≤75字）',
     '- usage: 字符串（网友怎么自然玩梗/接梗，附 1 句简短例句，≤80字）',
+    '- replies: 字符串数组（2~4 句别人抛这个梗时最地道的“接梗下句/名台词/捧哏回话”，用于直接入戏接梗而不是科普）',
     '- mood: 字符串数组（适用情绪标签，2~4个）',
     '- searchKeywords: 字符串数组（去中文表情包库搜图的 1~2 个精准短词，避免无意义字面拆词）'
   ].join('\n');
@@ -438,6 +448,7 @@ async function distillMemeFromWikitext(title, wikitext, userQuery = '') {
     '- origin: 字符串（一句话出处/背景，≤60字）',
     '- meaning: 字符串（核心含义/笑点，≤60字）',
     '- usage: 字符串（网友平时在什么语境下自然玩这个梗，附 1 句简短例句，≤70字）',
+    '- replies: 字符串数组（2~4 句别人抛这个梗时最地道的“接梗下句/名台词/捧哏回话”，用于直接入戏接梗）',
     '- mood: 字符串数组（适用情绪/场景标签，如 吐槽/嘲讽/震惊/装傻/离谱/催更/玩梗，2~4个）',
     '- searchKeywords: 字符串数组（用于去中文表情包库搜索对应梗图的 1~3 个最核心短词，2~6字，去掉 oo/xx 占位符）'
   ].join('\n');
@@ -516,31 +527,52 @@ async function callDashScopeNativeSearchJson(systemPrompt, userPrompt, { maxToke
 }
 
 async function lookupMemeViaWebSearch(query) {
+  let googleSnippets = '';
+  try {
+    const sp = await serperGoogleSearch(`${query} 是什么梗 出处`, { num: 6 });
+    if (Array.isArray(sp) && sp.length) {
+      googleSnippets = sp.map((x, i) => `${i + 1}. ${x.title}\n   ${x.snippet}`).join('\n');
+    }
+  } catch {
+    // fallback to DashScope native search below
+  }
+
   const sys = [
     '你是中文互联网网络热梗（B站/抖音/三国杀/ACG/空耳/游戏圈等）核查解析器。',
-    '必须基于联网搜索结果与准确已知事实作答，严禁胡编或把毫不相干的电视剧/明星/词条硬拼接进来！',
-    '如果确实不知道该梗的确切出处，或搜出来的网页都毫不相干，必须返回 {"found": false}，绝不瞎编。',
+    '必须基于搜索结果与准确已知事实作答，严禁胡编或把毫不相干的词条硬拼接进来！',
+    '如果确实不知道该梗的确切出处，或搜索结果都毫不相干，必须返回 {"found": false}，绝不瞎编。',
     '若确切知道/查到出处，严格只输出 JSON 对象：',
     '- found: true',
     '- name: 字符串（最常用的梗名）',
     '- aliases: 字符串数组（常见别名/空耳原文/完整台词，最多 4 个）',
     '- origin: 字符串（具体准确出处：作品/游戏/宣传片/原句或空耳来源，≤80字）',
     '- meaning: 字符串（核心笑点/表达的情绪含义，≤75字）',
-    '- usage: 字符串（网友怎么自然玩这个梗或接梗，附 1 句简短例句，≤80字）',
+    '- usage: 字符串（网友怎么自然玩这个梗，≤80字）',
+    '- replies: 字符串数组（2~4 句别人直接抛这个梗时最地道的“接梗下句/名台词/捧哏回话”，用于直接入戏接梗，不要写解释）',
     '- mood: 字符串数组（适用情绪标签，2~4个）',
-    '- searchKeywords: 字符串数组（用于搜对应表情包的 1~2 个精准短词，必须是该梗本身或对应角色，不要拆成无关字面词如“鸭蛋”）'
+    '- searchKeywords: 字符串数组（用于搜对应表情包的 1~2 个精准短词，必须是该梗本身或对应角色，不要拆成无关字面词）'
   ].join('\n');
+
+  if (googleSnippets) {
+    const parsed = await callDashScopeJson(
+      sys,
+      `要核查的网络梗：「${query}」\n\nGoogle 实时搜索结果：\n${googleSnippets}\n\n请基于以上真实搜索结果提炼 JSON（若搜索结果完全无关则返回 {"found": false}）。`,
+      { maxTokens: 700, timeoutMs: 22000 }
+    );
+    if (parsed && parsed.found === true && parsed.name && parsed.meaning) return parsed;
+  }
+
   const res = await callDashScopeNativeSearchJson(
     sys,
-    `请核查并解析网络梗「${query}」的确切出处、含义与玩梗方式。注意不要被无关的字面百科或明星话题误导；不确定就返回 {"found": false}。`,
-    { maxTokens: 650, timeoutMs: 28000 }
+    `请核查并解析网络梗「${query}」的确切出处、含义、接梗下句与玩梗方式。不确定就返回 {"found": false}。`,
+    { maxTokens: 700, timeoutMs: 28000 }
   );
   const parsed = res?.parsed;
   if (parsed && parsed.found === true && parsed.name && parsed.meaning) return parsed;
   return null;
 }
 
-export async function saveUserTaughtMeme({ name, origin = '', meaning = '', usage = '', aliases = [], mood = ['玩梗'], fetchImage = true, log = () => {} }) {
+export async function saveUserTaughtMeme({ name, origin = '', meaning = '', usage = '', replies = [], aliases = [], mood = ['玩梗'], fetchImage = true, log = () => {} }) {
   const cleanName = String(name || '').trim();
   if (!cleanName || !String(meaning || origin).trim()) throw new Error('梗名和解释不能为空');
   const kb = loadMemeKb();
@@ -553,6 +585,7 @@ export async function saveUserTaughtMeme({ name, origin = '', meaning = '', usag
     origin: String(origin || '').trim(),
     meaning: String(meaning || origin || '').trim(),
     usage: String(usage || '聊天接梗时自然使用').trim(),
+    replies: Array.isArray(replies) ? replies.filter(Boolean).slice(0, 4) : [],
     mood: Array.isArray(mood) && mood.length ? mood.slice(0, 4) : ['玩梗'],
     searchKeywords: [cleanName],
     source: 'user-taught',
@@ -651,6 +684,7 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
       origin: info.origin || '',
       meaning: info.meaning || '',
       usage: info.usage || '',
+      replies: Array.isArray(info.replies) ? info.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(info.mood) ? info.mood : ['玩梗'],
       searchKeywords: Array.isArray(info.searchKeywords) ? info.searchKeywords : [info.name],
       source: 'bilibili',
@@ -693,6 +727,7 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
       origin: info.origin || '',
       meaning: info.meaning || '',
       usage: info.usage || '',
+      replies: Array.isArray(info.replies) ? info.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(info.mood) ? info.mood : ['玩梗'],
       searchKeywords: Array.isArray(info.searchKeywords) ? info.searchKeywords : [],
       source: 'moegirl',
@@ -718,6 +753,7 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
       name: m.name,
       meaning: m.meaning,
       usage: m.usage,
+      replies: Array.isArray(m.replies) ? m.replies.slice(0, 3) : [],
       hasImage: Boolean(m.imageFile && fs.existsSync(m.imageFile))
     }))
   };
@@ -741,9 +777,10 @@ export function formatDailyFeedHint() {
     lines.push(`- [${h.tag || h.source}] ${h.title}：${h.gist}`);
   }
   if (memes.length) {
-    lines.push('【最近在萌娘百科刚学的梗（合适时可以自然玩梗或调 qq_send_meme 发对应梗图）】');
+    lines.push('【最近新学的梗（对方抛梗直接接下句或发对应梗图，别当百科老师科普出处）】');
     for (const m of memes) {
-      lines.push(`- 「${m.name}」${m.hasImage ? '[有梗图 id=' + m.id + ']' : ''}：${m.meaning}`);
+      const rep = Array.isArray(m.replies) && m.replies.length ? `｜接梗例：「${m.replies[0]}」` : '';
+      lines.push(`- 「${m.name}」${m.hasImage ? '[有梗图 id=' + m.id + ']' : ''}：${m.meaning}${rep}`);
     }
   }
   return lines.join('\n');
@@ -821,6 +858,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
       origin: info.origin || '',
       meaning: info.meaning || '',
       usage: info.usage || '',
+      replies: Array.isArray(info.replies) ? info.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(info.mood) ? info.mood : ['玩梗'],
       searchKeywords: Array.isArray(info.searchKeywords) ? info.searchKeywords : [q],
       source: 'moegirl-live',
@@ -851,6 +889,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
       origin: biliInfo.origin || '',
       meaning: biliInfo.meaning || '',
       usage: biliInfo.usage || '',
+      replies: Array.isArray(biliInfo.replies) ? biliInfo.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(biliInfo.mood) ? biliInfo.mood : ['玩梗'],
       searchKeywords: Array.isArray(biliInfo.searchKeywords) ? biliInfo.searchKeywords : [q],
       source: 'bilibili-live',
@@ -882,6 +921,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
       origin: webInfo.origin || '',
       meaning: webInfo.meaning || '',
       usage: webInfo.usage || '',
+      replies: Array.isArray(webInfo.replies) ? webInfo.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(webInfo.mood) ? webInfo.mood : ['玩梗'],
       searchKeywords: Array.isArray(webInfo.searchKeywords) ? webInfo.searchKeywords : [q],
       source: 'web-live',
@@ -944,12 +984,14 @@ function presentMeme(m) {
     origin: m.origin || '',
     meaning: m.meaning || '',
     usage: m.usage || '',
+    replies: Array.isArray(m.replies) ? m.replies : [],
     mood: m.mood || [],
     source: m.source || '',
     biliUrl: m.biliUrl || null,
     hasImage: Boolean(m.imageFile && fs.existsSync(m.imageFile)),
     imageTitle: m.imageTitle || null,
-    imageDesc: m.imageDesc || null
+    imageDesc: m.imageDesc || null,
+    playTip: '若对方是直接抛梗/抛台词/说怪话（没主动问“啥意思”），请直接顺着 replies 接下句、吐槽捧哏或调 qq_send_meme 发对应梗图，千万不要像百科老师一样解释出处！只有对方明确问“这是什么梗/啥意思”才简短解释。'
   };
 }
 

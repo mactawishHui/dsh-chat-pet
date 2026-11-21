@@ -339,7 +339,8 @@ node scripts/build-agent-preset-patches.mjs --check
    - **双引擎定时学梗**：
      - **B 站解梗 UP 主引擎**（复用已装的 `dsh-plugin-bilibili/lib/provider.js`）：按最新投稿搜索「梗指南」「白给梗科普」等解梗视频，抓取视频详情 + 全部标签 + 热评前 5 条，提炼出最新短视频/抖音/游戏圈热梗（含原视频 `bvid` 链接）；
      - **萌娘百科引擎**：通过公开 MediaWiki JSON API（`moegirl.uk/api.php`，经本地代理 `127.0.0.1:7890`）轮询 `Category:中国网络流行语句`、`Category:弹幕网站成句`、`Category:ACG圈成句`、`Category:迷因`，补充经典与 ACG 梗；
-     - **4 层实时查梗链（`qq_lookup_meme`）**：本地 `meme-kb.json` → 萌娘百科（严格相关性校验，杜绝无关词条误入库）→ **B 站精准搜「`<query> 是什么梗`」（读科普视频标签+热评）** → 阿里云百炼原生联网接口（`/api/v1/services/aigc/text-generation/generation` + `enable_search: true` + `standard`，严禁胡编）。
+     - **4 层实时查梗链（`qq_lookup_meme`）**：本地 `meme-kb.json` → 萌娘百科（严格相关性校验，杜绝无关词条误入库）→ **B 站精准搜「`<query> 是什么梗`」（读科普视频标签+热评，并与 Serper Google 搜索摘要并发交叉佐证，防止空耳/敏感梗望文生义）** → Serper Google / 百炼原生联网兜底。每条梗知识除 `origin`/`meaning`/`usage` 外，还沉淀 **`replies`（2–4 句经典接梗下句/名台词/捧哏回话）** 与 **`playTip`（接梗不科普提示）**。
+     - **听不懂先暗查 + 接梗不科普**：在 `agent.cordis.yml`、`bridge.js`（`surfToolLine`）与 `qq_lookup_meme` 工具描述中三处联动：遇到字面怪异/疑似空耳/黑话的短句（如「压力马斯内」「我要验牌」）先暗中调 `qq_lookup_meme` 查清入库；只要对方不是明确问“啥意思/啥梗”，查懂后**直接顺着 `replies` 接下句、捧哏吐槽或调 `qq_send_meme` 回对应梗图**，绝不当百科老师科普出处。
    - **MemeCub 自动配梗图**：拿提炼出的梗名/关键词直连官方开放中文表情包接口 `https://memecub.com/api/v1/search`（免 Key 每日 20 次直连），过滤 `profane !== true` 后下载原图/GIF 到 `/opt/qq-bridge/audio/memes/`，与萌娘百科释义 1 对 1 绑定。
 2. **安装定时任务**（每天 `09:30`、`14:30`、`20:30` 各执行一次，每次新学 5 个梗，稳稳控制在免 Key 免费额度内）：
    - `/etc/systemd/system/qq-surf.service`：`ExecStart=/usr/local/bin/node /opt/qq-bridge/src/surf-kb.mjs --run --max-memes 5`

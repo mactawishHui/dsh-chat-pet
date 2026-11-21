@@ -6,6 +6,7 @@
 > - 完整 QQ 聊天宠物调优 SOP：[chat-pet-tuning-playbook.md](./chat-pet-tuning-playbook.md)（Step 0 到 Step 6）
 > - **独立可解耦「玩梗与接梗」模块指南**：[meme-engine-module.md](./meme-engine-module.md)（平台无关，可直接接入任意聊天平台 / 游戏 NPC / MCP 服务）
 > - **独立可解耦「实时语音通话」模块指南**：[realtime-call-module.md](./realtime-call-module.md)（原生全双工通话、原声流式合成、瞬时打断零重叠、双向记忆打通，内核平台无关）
+> - **「自己的生活」日记模块指南**：[life-diary-module.md](./life-diary-module.md)（每日闲逛输入 + 见闻流水账 + 夜间以自己为主角写日记，发布前去 AI 味与隐私审查）
 
 ---
 
@@ -31,7 +32,11 @@
 ├── chat-pet-tuning-playbook.md   # QQ 聊天宠物完整零背景复现 SOP（含验收标准与踩坑速查）
 ├── meme-engine-module.md         # 独立可解耦「玩梗与接梗」模块架构与新环境接入指南（平台无关）
 ├── realtime-call-module.md       # 独立可解耦「实时语音通话」模块架构与新环境接入指南（平台无关）
+├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 见闻流水账 + 夜间日记（说说）
 └── templates/
+    ├── qq-life.mjs               # 闲逛时间 + 夜间写日记（审查后发 QQ 空间，仅好友可见）
+    ├── life-journal.mjs          # 见闻流水账（JSONL，凌晨 5 点换日，保留 14 天）
+    ├── qq-life-tools.mjs         # 闲逛会话工具边界（只读 B 站 / 安全搜索 + 共用日配额）
     ├── call-engine.mjs           # 平台无关全双工通话内核（VAD / 按需 ASR / SSE TTS / 1x 节拍器 / 打断 / 记忆摘要）
     ├── qq-call-adapter.mjs       # QQ 原生语音通话接入适配器与守护进程（PulseAudio / 双层白名单 / 音频桥接）
     ├── surf-kb.mjs               # 每日热点 + 4 层查梗链 + 3 档破圈热度×生命力选梗 + MemeCub 自动配图

@@ -122,7 +122,38 @@ function buildDrawingsMarkdown(drawFiles) {
   return lines.join('\n');
 }
 
-function buildReadme({ kb, feed, stickers, slang, memeFiles, drawFiles }) {
+function readJsonl(p) {
+  try {
+    return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function buildDiaryMarkdown(entries) {
+  const lines = [
+    '# 小鲸鲸的日记',
+    '',
+    `> 共 **${entries.length}** 篇。每晚由她自己根据当天的见闻写成，发在 QQ 空间（仅好友可见）。更新时间：${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+    ''
+  ];
+  if (!entries.length) lines.push('还没有日记。');
+  for (const e of [...entries].reverse()) {
+    lines.push(`## ${e.day}`);
+    lines.push('');
+    lines.push(String(e.content || '').trim());
+    lines.push('');
+    if (e.image) {
+      const f = path.basename(e.image);
+      const dir = e.image.includes('/memes/') ? 'memes' : 'drawings';
+      lines.push(`<img src="${dir}/${f}" alt="${f}" width="320" />`);
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildReadme({ kb, feed, stickers, slang, memeFiles, drawFiles, diaryCount = 0 }) {
   const memes = Array.isArray(kb.memes) ? kb.memes : [];
   const hots = Array.isArray(feed.hotItems) ? feed.hotItems : [];
   const stickerCount = Array.isArray(stickers) ? stickers.length : (Array.isArray(stickers?.entries) ? stickers.entries.length : 0);
@@ -140,6 +171,7 @@ function buildReadme({ kb, feed, stickers, slang, memeFiles, drawFiles }) {
     `| 梗知识库 | ${memes.length} 条 | [MEMES.md](./MEMES.md) / [knowledge/meme-kb.json](./knowledge/meme-kb.json) |`,
     `| 梗图 / GIF | ${memeFiles.length} 张 | [MEMES.md](./MEMES.md) / [memes/](./memes) |`,
     `| 绘画作品 | ${drawFiles.length} 张 | [DRAWINGS.md](./DRAWINGS.md) / [drawings/](./drawings) |`,
+    `| 日记（说说） | ${diaryCount} 篇 | [DIARY.md](./DIARY.md) / [memory/life-journal.jsonl](./memory/life-journal.jsonl) |`,
     `| QQ 收藏表情元数据 | ${stickerCount} 条 | [knowledge/stickers.json](./knowledge/stickers.json) |`,
     `| 群黑话候选/词典 | ${slangCount} 条 | [knowledge/slang.json](./knowledge/slang.json) |`,
     '| 长期印象与对话历史 | 实时同步 | [memory/social-v2.json](./memory/social-v2.json) |',
@@ -190,7 +222,11 @@ async function main() {
 
   writeFile(path.join(VAULT_DIR, 'MEMES.md'), buildMemesMarkdown(kbPortable));
   writeFile(path.join(VAULT_DIR, 'DRAWINGS.md'), buildDrawingsMarkdown(drawFiles));
-  writeFile(path.join(VAULT_DIR, 'README.md'), buildReadme({ kb: kbPortable, feed, stickers, slang, memeFiles, drawFiles }));
+  const diaries = readJsonl(path.join(BRIDGE_ROOT, 'state', 'diary.jsonl'));
+  writeFile(path.join(VAULT_DIR, 'DIARY.md'), buildDiaryMarkdown(diaries));
+  const journal = readJsonl(path.join(BRIDGE_ROOT, 'state', 'life-journal.jsonl'));
+  writeFile(path.join(VAULT_DIR, 'memory', 'life-journal.jsonl'), journal.map((r) => JSON.stringify(r)).join('\n') + (journal.length ? '\n' : ''));
+  writeFile(path.join(VAULT_DIR, 'README.md'), buildReadme({ kb: kbPortable, feed, stickers, slang, memeFiles, drawFiles, diaryCount: diaries.length }));
 
   await git(['add', '-A']);
   const status = await git(['status', '--porcelain']);

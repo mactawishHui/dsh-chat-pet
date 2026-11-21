@@ -3,6 +3,17 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { serperGoogleSearch } from './reverse-image.mjs';
+import { appendJournal } from './life-journal.mjs';
+
+function journalMeme(entry, how) {
+  appendJournal({
+    kind: 'meme',
+    title: entry.name,
+    detail: [entry.meaning, Array.isArray(entry.replies) && entry.replies.length ? `接梗：${entry.replies[0]}` : ''].filter(Boolean).join('｜'),
+    source: how,
+    image: entry.imageFile || undefined
+  });
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -705,6 +716,7 @@ export async function saveUserTaughtMeme({ name, origin = '', meaning = '', usag
   else kb.memes.push(entry);
   saveMemeKb(kb);
   log(`[meme] 已记下新教的梗：「${entry.name}」${entry.imageFile ? '（已配梗图）' : ''}`);
+    journalMeme(entry, 'taught');
   return presentMeme(entry);
 }
 
@@ -834,6 +846,18 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
     }))
   };
   writeJsonAtomic(DAILY_FEED_PATH, feed);
+  try {
+    const picks = curatedItems.slice(0, 4);
+    if (picks.length) {
+      appendJournal({
+        kind: 'surf',
+        title: `刷手机看到的：${picks.map((h) => h.title).join(' / ')}`.slice(0, 120),
+        detail: picks.map((h) => `${h.title}——${h.gist}`).join('；'),
+        source: 'daily-surf'
+      });
+    }
+    for (const m of newlyLearned) journalMeme(m, 'daily-surf');
+  } catch {}
   log(`[surf] 完成：今日热点 ${curatedItems.length} 条，本次新学梗 ${newlyLearned.length} 个（总梗库 ${kb.memes.length} 个，其中带图 ${kb.memes.filter((m) => m.imageFile && fs.existsSync(m.imageFile)).length} 个）`);
   return { feed, newlyLearnedCount: newlyLearned.length, totalMemes: kb.memes.length };
 }
@@ -950,6 +974,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
     else kb.memes.push(entry);
     saveMemeKb(kb);
     log(`[meme] 实时从萌娘百科查到并入库：「${entry.name}」${entry.imageFile ? '（已配梗图）' : ''}`);
+    journalMeme(entry, 'chat-lookup');
     return { source: 'moegirl-live', total: kb.memes.length, items: [presentMeme(entry)] };
   }
 
@@ -982,6 +1007,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
     else kb.memes.push(entry);
     saveMemeKb(kb);
     log(`[meme] 实时从B站搜到新梗并入库：「${entry.name}」${entry.imageFile ? '（已配梗图）' : ''}`);
+    journalMeme(entry, 'chat-lookup');
     return { source: 'bilibili-live', total: kb.memes.length, items: [presentMeme(entry)] };
   }
 
@@ -1013,6 +1039,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
     else kb.memes.push(entry);
     saveMemeKb(kb);
     log(`[meme] 实时全网搜到新梗并入库：「${entry.name}」${entry.imageFile ? '（已配梗图）' : ''}`);
+    journalMeme(entry, 'chat-lookup');
     return { source: 'web-live', total: kb.memes.length, items: [presentMeme(entry)] };
   }
 

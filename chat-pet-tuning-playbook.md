@@ -336,8 +336,8 @@ node scripts/build-agent-preset-patches.mjs --check
 
 1. **部署核心模块**：将 `templates/surf-kb.mjs` 复制到 `/opt/qq-bridge/src/surf-kb.mjs`，创建梗图存储目录 `/opt/qq-bridge/audio/memes`。
    - **实时热点源（国内直连）**：B 站热门（`api.bilibili.com/x/web-interface/popular`）+ 豆瓣热门电影（`movie.douban.com/j/search_subjects`）+ 今日头条热榜（`toutiao.com/hot-event/hot-board/`），由 DashScope `qwen-plus-latest` 洗炼成 8–10 条适合聊天的 `/opt/qq-bridge/state/daily-feed.json`。
-   - **定时学新梗（新梗优先、高热度优先）**：
-     - 定时巡航（`qq-surf.timer`）**不再随机抓取萌娘百科陈年老词条**，改为 **Serper 时间窗口（近 1 周 `qdr:w` → 近 1 月 `qdr:m` → 近 1 年 `qdr:y`）定向抓取 B 站头部解梗 UP 主（`梗指南` / `白给梗科普` / `梗百科`）最新爆款** + B 站官方接口单次高播放量过滤（`play >= 30000`），确保定时巡航每天学到的都是最近几天到最近几个月的最新高热度热梗；
+   - **定时学梗（破圈热度 × 当前生命力 3 档排序）**：
+     - 定时巡航（`qq-surf.timer`）混合构建三个候选池：**近期 1 月/1 年 B 站头部解梗视频** + **B 站全站高播放爆款（`order=click`, `play >= 50万`）** + **常青国民高活力梗池（如鸡你太美、华强买瓜、疯狂星期四、哈基米、牢大等）**，再由 LLM 评委按 **T1（近期全网破圈爆火） > T2（至今生命力极强的国民常青梗） > T3（小众圈层梗，兜底）** 严格排序精选——保证流传度与生命力优先，同等国民热度下新梗优先，绝不被小众冷门新梗刷屏；
      - 萌娘百科仍保留在实时查梗链中，仅当聊天时用户主动提到经典/ACG 老梗时按需触发。
      - **4 层实时查梗链（`qq_lookup_meme`）**：本地 `meme-kb.json` → 萌娘百科（严格相关性校验，杜绝无关词条误入库）→ **B 站精准搜「`<query> 是什么梗`」（读科普视频标签+热评，并与 Serper Google 搜索摘要并发交叉佐证，防止空耳/敏感梗望文生义）** → Serper Google / 百炼原生联网兜底。每条梗知识除 `origin`/`meaning`/`usage` 外，还沉淀 **`replies`（2–4 句经典接梗下句/名台词/捧哏回话）** 与 **`playTip`（接梗不科普提示）**。
      - **听不懂先暗查 + 接梗不科普**：在 `agent.cordis.yml`、`bridge.js`（`surfToolLine`）与 `qq_lookup_meme` 工具描述中三处联动：遇到字面怪异/疑似空耳/黑话的短句（如「压力马斯内」「我要验牌」）先暗中调 `qq_lookup_meme` 查清入库；只要对方不是明确问“啥意思/啥梗”，查懂后**直接顺着 `replies` 接下句、捧哏吐槽或调 `qq_send_meme` 回对应梗图**，绝不当百科老师科普出处。

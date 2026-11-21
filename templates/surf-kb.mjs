@@ -72,13 +72,17 @@ async function fetchBiliVideoContext(bvid) {
 
 function extractMemeNameFromBiliTitle(title) {
   let s = String(title || '').trim();
-  // 去掉前后【梗指南】【白给梗科普】等括号前缀后缀
-  s = s.replace(/【[^】]*(?:梗指南|梗百科|梗科普|白给|科普|热梗)[^】]*】/g, '').trim();
+  // 跳过明显冷门垂直小圈子或合集/盘点/道歉视频
+  if (/历史梗|足球梗|观鸟梗|道歉|炸体育场|合集|年度总结|盘点|TOP\d/i.test(s)) return '';
+  // 去掉平台后缀和【梗指南】【白给梗科普】等标签
+  s = s.replace(/[_-](?:游戏热门视频|哔哩哔哩|bilibili|生活热门视频|搞笑热门视频).*$/i, '').trim();
+  s = s.replace(/【[^】]*(?:梗指南|梗百科|梗科普|梗知识|白给|科普|热梗)[^】]*】/g, '').trim();
   const m = s.match(/^(.+?)(?:到底)?是什么梗/);
   if (m && m[1]) s = m[1].trim();
+  // 若还带逗号副标题，只保留主梗名
+  if (s.includes('，')) s = s.split('，')[0].trim();
   s = s.replace(/^[“"「『《]+|[”"」』》？?!！：:\s]+$/g, '').trim();
-  // 过滤太泛或站内吃瓜标题
-  if (!s || s.length < 2 || s.length > 20 || /梗指南|道歉|炸体育场/.test(s)) return '';
+  if (!s || s.length < 2 || s.length > 20 || /梗指南|梗科普/.test(s)) return '';
   return s;
 }
 
@@ -160,26 +164,74 @@ async function lookupMemeViaBilibili(query) {
   return null;
 }
 
-async function fetchFreshBiliMemeCandidates(limit = 6) {
-  const p = await getBiliProvider();
-  if (!p) return [];
+async function fetchFreshViralMemeCandidates(limit = 10, existingNames = new Set()) {
   const results = [];
-  for (const kw of ['梗指南', '白给梗科普']) {
+  const seen = new Set([...existingNames].map((s) => String(s || '').toLowerCase()));
+  const pushCand = ({ memeName, bvid = '', title = '', author = '', date = '', source = 'fresh' }) => {
+    const clean = String(memeName || '').trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    results.push({ memeName: clean, bvid, title, author, date, source });
+  };
+
+  // 第 1 优先级：Serper 按时间过滤（近 1 周 → 近 1 月 → 近 1 年）抓 B 站头部解梗 UP 主最新爆款
+  const timeWindows = [
+    { tbs: 'qdr:w', q: 'site:bilibili.com/video "是什么梗" ("梗指南" OR "白给梗科普" OR "梗百科")' },
+    { tbs: 'qdr:m', q: 'site:bilibili.com/video "是什么梗" ("梗指南" OR "白给梗科普" OR "梗百科")' },
+    { tbs: 'qdr:y', q: 'site:bilibili.com/video "是什么梗【梗指南】"' }
+  ];
+  for (const win of timeWindows) {
+    if (results.length >= limit) break;
     try {
-      const r = await p.search({ keyword: kw, page: 1, pageSize: 8, order: 'pubdate' });
-      for (const it of (r?.items || [])) {
-        const memeName = extractMemeNameFromBiliTitle(it.title);
-        if (memeName && it.bvid && !results.some((x) => x.memeName === memeName)) {
-          results.push({ memeName, bvid: it.bvid, title: it.title, author: it.author });
-        }
+      const hits = await serperGoogleSearch(win.q, { num: 10, tbs: win.tbs });
+      for (const h of hits) {
+        const memeName = extractMemeNameFromBiliTitle(h.title);
+        if (!memeName) continue;
+        const bvidMatch = String(h.url || '').match(/BV[0-9A-Za-z]{10}/);
+        pushCand({
+          memeName,
+          bvid: bvidMatch ? bvidMatch[0] : '',
+          title: h.title,
+          date: h.date || win.tbs,
+          source: 'serper-bili-fresh'
+        });
         if (results.length >= limit) break;
       }
     } catch {
-      // ignore occasional rate limit
+      // ignore if Serper unavailable or empty window
     }
-    if (results.length >= limit) break;
-    await sleepMs(1200);
   }
+
+  // 第 2 优先级（补充）：B 站官方接口单次温和查询，严格过滤播放量 >= 3 万或头部解梗 UP 主（避免抓冷门小视频和风控）
+  if (results.length < limit) {
+    const p = await getBiliProvider();
+    if (p) {
+      try {
+        const r = await p.search({ keyword: '梗指南', page: 1, pageSize: 10, order: 'pubdate' });
+        for (const it of (r?.items || [])) {
+          const play = Number(it.play || it.views || 0);
+          const author = String(it.author || '');
+          const isBigUp = /^(梗指南|白给梗科普|梗百科)$/.test(author);
+          if (!isBigUp && play < 30000) continue;
+          const memeName = extractMemeNameFromBiliTitle(it.title);
+          if (!memeName) continue;
+          pushCand({
+            memeName,
+            bvid: it.bvid || '',
+            title: it.title || '',
+            author,
+            date: 'recent-bili',
+            source: 'bili-popular'
+          });
+          if (results.length >= limit) break;
+        }
+      } catch {
+        // ignore occasional Bilibili rate limit
+      }
+    }
+  }
+
   return results;
 }
 
@@ -622,7 +674,7 @@ function makeMemeId(name) {
 
 // ── 4. 核心入口：每日定时冲浪 + 萌娘学梗 + 自动配梗图 ─────────────────────────
 export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) {
-  log('[surf] 开始刷今日热点与萌娘百科梗库…');
+  log('[surf] 开始刷今日热点与近期爆火新梗…');
   const [bili, douban, toutiao] = await Promise.all([
     fetchBilibiliPopular(),
     fetchDoubanHotMovies(),
@@ -658,37 +710,48 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
     }));
   }
 
-  // 双引擎自动学新梗：1) B站「梗指南/梗科普」最新视频（最新短视频梗） + 2) 萌娘百科分类（经典/ACG梗）
+  // 定时学新梗：只学「近几天 / 近一个月 / 近一年」高热度爆款新梗（不再随机抓萌娘百科十年前老词条；萌娘百科保留用于聊天时按需实时查经典梗）
   const kb = loadMemeKb();
-  const existingNames = new Set(kb.memes.map((m) => String(m.name || '').toLowerCase()));
-  const existingOrig = new Set(kb.memes.map((m) => String(m.wikiTitle || '').toLowerCase()));
+  const existingNames = new Set();
+  for (const m of kb.memes) {
+    if (m.name) existingNames.add(String(m.name).toLowerCase());
+    for (const a of (m.aliases || [])) {
+      if (a) existingNames.add(String(a).toLowerCase());
+    }
+  }
 
   const newlyLearned = [];
-  const biliQuota = Math.max(1, Math.floor(maxNewMemes / 2));
+  const candidates = await fetchFreshViralMemeCandidates(maxNewMemes + 6, existingNames);
+  log(`[surf] 发现近期高热度新梗候选 ${candidates.length} 个：${candidates.slice(0, 8).map((c) => c.memeName).join('、') || '无'}`);
 
-  // 引擎 A：B站解梗 UP 主最新投稿
-  const biliCandidates = await fetchFreshBiliMemeCandidates(biliQuota + 4);
-  for (const cand of biliCandidates) {
-    if (newlyLearned.length >= biliQuota) break;
+  for (const cand of candidates) {
+    if (newlyLearned.length >= maxNewMemes) break;
     if (existingNames.has(cand.memeName.toLowerCase())) continue;
-    await sleepMs(1000);
-    const info = await lookupMemeViaBilibili(cand.memeName);
+    await sleepMs(1800);
+    // 优先 B 站 + Serper 交叉解析；若 B 站偶尔限流则自动无缝切 Serper 全网解析
+    let info = await lookupMemeViaBilibili(cand.memeName);
+    let srcTag = 'bilibili-fresh';
+    if (!info || !info.name) {
+      info = await lookupMemeViaWebSearch(cand.memeName);
+      srcTag = 'web-fresh';
+    }
     if (!info || !info.name) continue;
     if (existingNames.has(info.name.toLowerCase())) continue;
-    const img = await fetchAndSaveMemeImage(info.name, info.searchKeywords || [info.name]);
+    const img = await fetchAndSaveMemeImage(info.name, [cand.memeName, ...(info.searchKeywords || [info.name])]);
     const entry = {
       id: makeMemeId(info.name),
       wikiTitle: '',
       name: info.name,
-      aliases: Array.isArray(info.aliases) ? info.aliases : [],
+      aliases: Array.from(new Set([cand.memeName, ...(Array.isArray(info.aliases) ? info.aliases : [])])).slice(0, 5),
       origin: info.origin || '',
       meaning: info.meaning || '',
       usage: info.usage || '',
       replies: Array.isArray(info.replies) ? info.replies.filter(Boolean).slice(0, 4) : [],
       mood: Array.isArray(info.mood) ? info.mood : ['玩梗'],
       searchKeywords: Array.isArray(info.searchKeywords) ? info.searchKeywords : [info.name],
-      source: 'bilibili',
-      biliUrl: info.biliUrl || `https://www.bilibili.com/video/${cand.bvid}`,
+      source: srcTag,
+      freshDate: cand.date || '',
+      biliUrl: info.biliUrl || (cand.bvid ? `https://www.bilibili.com/video/${cand.bvid}` : ''),
       imageFile: img?.imageFile || null,
       imageId: img?.imageId || null,
       imageTitle: img?.imageTitle || null,
@@ -698,49 +761,9 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
     };
     kb.memes.push(entry);
     existingNames.add(entry.name.toLowerCase());
+    existingNames.add(cand.memeName.toLowerCase());
     newlyLearned.push(entry);
-    log(`[surf] 从B站学到新梗：「${entry.name}」${entry.imageFile ? ' + 已配梗图(' + path.basename(entry.imageFile) + ')' : ' (暂未匹配到图)'}`);
-  }
-
-  // 引擎 B：萌娘百科最新/经典词条
-  const pool = [];
-  for (const cat of MOEGIRL_CATEGORIES) {
-    const titles = await fetchMoegirlCategoryTitles(cat, 15);
-    for (const t of titles) {
-      if (!existingOrig.has(t.toLowerCase()) && !existingNames.has(t.toLowerCase()) && !pool.includes(t)) {
-        pool.push(t);
-      }
-    }
-  }
-
-  for (const title of pool) {
-    if (newlyLearned.length >= maxNewMemes) break;
-    const wikitext = await fetchMoegirlWikitext(title);
-    if (!wikitext || wikitext.length < 60) continue;
-    const info = await distillMemeFromWikitext(title, wikitext);
-    const img = await fetchAndSaveMemeImage(info.name || title, info.searchKeywords || [title]);
-    const entry = {
-      id: makeMemeId(info.name || title),
-      wikiTitle: title,
-      name: info.name || title,
-      aliases: Array.isArray(info.aliases) ? info.aliases : [],
-      origin: info.origin || '',
-      meaning: info.meaning || '',
-      usage: info.usage || '',
-      replies: Array.isArray(info.replies) ? info.replies.filter(Boolean).slice(0, 4) : [],
-      mood: Array.isArray(info.mood) ? info.mood : ['玩梗'],
-      searchKeywords: Array.isArray(info.searchKeywords) ? info.searchKeywords : [],
-      source: 'moegirl',
-      imageFile: img?.imageFile || null,
-      imageId: img?.imageId || null,
-      imageTitle: img?.imageTitle || null,
-      imageDesc: img?.imageDesc || null,
-      imageTags: img?.imageTags || [],
-      learnedAt: new Date().toISOString()
-    };
-    kb.memes.push(entry);
-    newlyLearned.push(entry);
-    log(`[surf] 从萌娘学到新梗：「${entry.name}」${entry.imageFile ? ' + 已配梗图(' + path.basename(entry.imageFile) + ')' : ' (暂未匹配到图)'}`);
+    log(`[surf] 学到近期热梗：「${entry.name}」(${entry.freshDate || srcTag})${entry.imageFile ? ' + 已配梗图(' + path.basename(entry.imageFile) + ')' : ' (暂未匹配到图)'}`);
   }
   if (newlyLearned.length) saveMemeKb(kb);
 

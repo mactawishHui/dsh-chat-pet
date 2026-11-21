@@ -74,11 +74,14 @@ export async function reverseImageSearch(imageUrl, { limit = 12, keyPath = DEFAU
   };
 }
 
-export async function serperGoogleSearch(query, { num = 8, keyPath = DEFAULT_KEY_PATH } = {}) {
+export async function serperGoogleSearch(query, { num = 8, tbs = '', keyPath = DEFAULT_KEY_PATH } = {}) {
   const q = String(query || '').trim();
   if (!q) throw new Error('查询词为空');
   const apiKey = readSerperKey(keyPath);
   if (!apiKey) throw new Error('未配置 Serper API Key');
+
+  const body = { q, gl: 'cn', hl: 'zh-cn', num: Math.min(10, Math.max(1, num)) };
+  if (tbs) body.tbs = tbs;
 
   const resp = await fetch('https://google.serper.dev/search', {
     method: 'POST',
@@ -86,7 +89,7 @@ export async function serperGoogleSearch(query, { num = 8, keyPath = DEFAULT_KEY
       'X-API-KEY': apiKey,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ q, gl: 'cn', hl: 'zh-cn', num: Math.min(10, Math.max(1, num)) }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000)
   });
   if (!resp.ok) {
@@ -98,14 +101,16 @@ export async function serperGoogleSearch(query, { num = 8, keyPath = DEFAULT_KEY
     results.push({
       title: String(data.answerBox.title || `摘要：${q}`),
       url: String(data.answerBox.link || 'https://google.com'),
-      snippet: String(data.answerBox.answer || data.answerBox.snippet || '').slice(0, 400)
+      snippet: String(data.answerBox.answer || data.answerBox.snippet || '').slice(0, 400),
+      date: ''
     });
   }
   if (data?.knowledgeGraph?.description) {
     results.push({
       title: String(data.knowledgeGraph.title || q),
       url: String(data.knowledgeGraph.descriptionLink || 'https://google.com'),
-      snippet: String(data.knowledgeGraph.description || '').slice(0, 400)
+      snippet: String(data.knowledgeGraph.description || '').slice(0, 400),
+      date: ''
     });
   }
   for (const item of (data?.organic || []).slice(0, num)) {
@@ -113,7 +118,8 @@ export async function serperGoogleSearch(query, { num = 8, keyPath = DEFAULT_KEY
     results.push({
       title: String(item.title || ''),
       url: String(item.link || ''),
-      snippet: String(item.snippet || '').slice(0, 360)
+      snippet: String(item.snippet || '').slice(0, 360),
+      date: String(item.date || '')
     });
   }
   if (!results.length) throw new Error('Serper Search 返回空结果');

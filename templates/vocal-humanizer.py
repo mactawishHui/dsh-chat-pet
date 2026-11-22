@@ -505,15 +505,23 @@ def main():
         vals = pitch.selected_array['frequency']
         vals = vals[vals > 0]
         if len(vals) < 10:
-            res = {'median_hz': 0.0, 'p25_hz': 0.0, 'p75_hz': 0.0, 'suggested_pitch_shift': 0}
+            res = {'median_hz': 0.0, 'p25_hz': 0.0, 'p75_hz': 0.0, 'p90_hz': 0.0, 'suggested_pitch_shift': 0}
         else:
             med = float(np.median(vals))
-            # 女声正常音域 (205~420Hz) 原调 0 半音直出；男声低音 (<205Hz) 精确升八度 (+12) 让伴奏保持原调无损
-            shift = 12 if med < 205.0 else (-12 if med > 450.0 else 0)
+            p90 = float(np.percentile(vals, 90))
+            # 仅对真正低沉男声 (<172Hz 且高音区翻倍后 <=620Hz) 升八度 (+12) 以保持伴奏原调无损；
+            # 高男声/女中低音 (172~440Hz) 直接原调 0，避免副歌飙高音变尖锐花栗鼠！
+            if med < 172.0 and p90 * 2.0 <= 620.0:
+                shift = 12
+            elif med > 450.0:
+                shift = -12
+            else:
+                shift = 0
             res = {
                 'median_hz': round(med, 1),
                 'p25_hz': round(float(np.percentile(vals, 25)), 1),
                 'p75_hz': round(float(np.percentile(vals, 75)), 1),
+                'p90_hz': round(p90, 1),
                 'suggested_pitch_shift': shift,
             }
         print(json.dumps(res, ensure_ascii=False))

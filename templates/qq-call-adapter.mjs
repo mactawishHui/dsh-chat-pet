@@ -17,6 +17,9 @@ import { RealtimeCallEngine } from './call-engine.mjs';
 import { fetchCityWeather } from './weather-solar.mjs';
 import { lookupMeme } from './surf-kb.mjs';
 import { serperGoogleSearch } from './reverse-image.mjs';
+import { ScreenVisionEngine } from './screen-vision-engine.mjs';
+import { attachScreenWebEndpoint } from './screen-web-endpoint.mjs';
+import { QQScreenShareAdapter } from './qq-screen-adapter.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -225,6 +228,12 @@ class NativeQQCallDaemon {
     this.ignoredWids = new Set();
     this.wlMap = new Map();
     this.lastWlRefresh = 0;
+    this.screenEngine = new ScreenVisionEngine({ log });
+    this.qqScreenAdapter = new QQScreenShareAdapter({
+      screenEngine: this.screenEngine,
+      containerName: CONTAINER_NAME,
+      log
+    });
   }
 
   async start() {
@@ -235,38 +244,85 @@ class NativeQQCallDaemon {
     const wlDesc = [...this.wlMap.entries()].map(([u, v]) => `${u}(${[...v.names].join('/')})`).join(', ');
     log(`[call-adapter] 已启动 QQ 原生通话守护 | 白名单: ${wlDesc} | 群通话: ${cfg.allowGroupCall ? '开' : '关'} | 每日限额: ${cfg.dailyLimitMin}min`);
 
-    this._startHttpServer(cfg.port);
+    this._startHttpServer(cfg.port, cfg);
     this._pollLoop();
   }
 
-  _startHttpServer(port) {
-    const srv = http.createServer((req, res) => {
-      if (req.url === '/health' || req.url === '/status') {
-        let dailyUsedSec = 0;
-        try {
-          const st = JSON.parse(fs.readFileSync('/opt/qq-bridge/state/call-stats.json', 'utf8'));
-          if (st?.day === new Date().toISOString().slice(0, 10)) dailyUsedSec = Number(st.usedSec) || 0;
-        } catch {}
-        const cfg = loadConfig();
-        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          ok: true,
-          state: this.state,
-          whitelist: cfg.whitelist,
-          allowGroupCall: cfg.allowGroupCall,
-          dailyUsedSec,
-          dailyLimitMin: cfg.dailyLimitMin,
-          currentCall: this.currentCall,
-          recentCalls: this.recentCalls.slice(-10)
-        }, null, 2));
-        return;
+  _startHttpServer(port, cfg) {
+    let handleScreenHttp = null;
+    const srv = http.createServer(async (req, res) => {
+      try {
+        const urlObj = new URL(req.url || '/', 'http://127.0.0.1');
+        if (urlObj.pathname === '/health' || urlObj.pathname === '/status') {
+          let dailyUsedSec = 0;
+          try {
+            const st = JSON.parse(fs.readFileSync('/opt/qq-bridge/state/call-stats.json', 'utf8'));
+            if (st?.day === new Date().toISOString().slice(0, 10)) dailyUsedSec = Number(st.usedSec) || 0;
+          } catch {}
+          const curCfg = loadConfig();
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({
+            ok: true,
+            state: this.state,
+            whitelist: curCfg.whitelist,
+            allowGroupCall: curCfg.allowGroupCall,
+            dailyUsedSec,
+            dailyLimitMin: curCfg.dailyLimitMin,
+            currentCall: this.currentCall,
+            recentCalls: this.recentCalls.slice(-10),
+            screen: this.screenEngine.getStatus()
+          }, null, 2));
+          return;
+        }
+        if (req.method === 'GET' && urlObj.pathname === '/api/screen/qq-probe') {
+          const expected = readConsoleToken();
+          const provided = String(urlObj.searchParams.get('token') || req.headers['x-screen-token'] || req.headers['x-console-token'] || '').trim();
+          if (expected && provided !== expected) {
+            res.writeHead(401, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+            return;
+          }
+          const info = await this.qqScreenAdapter.probe();
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: true, callState: this.state, activeWin: this.activeWin, ...info }, null, 2));
+          return;
+        }
+        if (handleScreenHttp && await handleScreenHttp(req, res)) return;
+        res.writeHead(404);
+        res.end('not found');
+      } catch (err) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: String(err?.message ?? err) }));
       }
-      res.writeHead(404);
-      res.end('not found');
+    });
+    handleScreenHttp = attachScreenWebEndpoint(srv, {
+      screenEngine: this.screenEngine,
+      getCallEngine: () => this.engine,
+      getCallState: () => this.state,
+      getToken: () => readConsoleToken(),
+      dshBaseUrl: cfg.dshBaseUrl,
+      dshAuthToken: cfg.dshAuthToken,
+      ttsUrl: String(cfg.raw.draw?.serviceUrl || 'http://127.0.0.1:3210'),
+      log
     });
     srv.listen(port, '127.0.0.1', () => {
-      log(`[call-adapter] 状态接口监听 http://127.0.0.1:${port}/health`);
+      log(`[call-adapter] 状态与看屏控制台监听 http://127.0.0.1:${port}/health | /screen`);
     });
+  }
+
+  async _isCallWindowAlive() {
+    if (this.activeWin?.wid) {
+      try {
+        const out = await dockerExec(`DISPLAY=:1 xwininfo -id ${this.activeWin.wid} 2>/dev/null | grep -E "Map State: IsViewable|Width:" || true`);
+        if (out.includes('IsViewable')) return true;
+      } catch {}
+    }
+    const win = await findCallWindow();
+    if (win) {
+      this.activeWin = win;
+      return true;
+    }
+    return false;
   }
 
   async _pollLoop() {
@@ -291,12 +347,10 @@ class NativeQQCallDaemon {
           }
           await sleep(450);
         } else if (this.state === 'in_call') {
-          const win = await findCallWindow();
-          if (!win) {
+          const alive = await this._isCallWindowAlive();
+          if (!alive) {
             log('[call-adapter] 检测到通话窗口关闭（对方已挂断）');
             await this._teardownCall('remote_hangup');
-          } else {
-            this.activeWin = win;
           }
           await sleep(1000);
         } else {
@@ -470,6 +524,7 @@ class NativeQQCallDaemon {
       silenceAskSec: cfg.silenceAskSec,
       silenceHangupSec: cfg.silenceHangupSec,
       defaultCity: cfg.defaultCity,
+      screenEngine: this.screenEngine,
       log,
       onSidecarTask: async (task) => {
         if (task.kind === 'remember') {
@@ -565,6 +620,7 @@ class NativeQQCallDaemon {
     });
 
     this._spawnParec();
+    await this.qqScreenAdapter.start(this.activeWin?.wid || '').catch(() => {});
     try {
       await this.engine.start();
     } catch (err) {
@@ -577,6 +633,7 @@ class NativeQQCallDaemon {
   async _teardownCall(reason) {
     if (this.state !== 'in_call') return;
     this.state = 'cooldown';
+    this.qqScreenAdapter.stop();
     if (this.parecProc) { try { this.parecProc.kill('SIGKILL'); } catch {} this.parecProc = null; }
     if (this.pacatProc) {
       try { this.pacatProc.stdin?.end(); } catch {}

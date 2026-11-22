@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
+import { detectScreenModeCommand } from './screen-vision-engine.mjs';
 
 const FRAME_SAMPLES_16K = 320; // 20ms @ 16kHz
 const FRAME_BYTES_16K = FRAME_SAMPLES_16K * 2; // 640 bytes
@@ -70,7 +71,7 @@ function calcRms(buf) {
 
 function cleanSpokenText(raw) {
   let s = String(raw || '');
-  s = s.replace(/\[HANGUP\]/gi, '');
+  s = s.replace(/\[(?:HANGUP|SILENT)\]/gi, '');
   s = s.replace(/https?:\/\/\S+/g, '');
   s = s.replace(/```[\s\S]*?```/g, '');
   s = s.replace(/[*_~`#>]/g, '');
@@ -433,6 +434,7 @@ export class RealtimeCallEngine {
     this.onSummary = opts.onSummary || (async () => {});
     this.onSidecarTask = typeof opts.onSidecarTask === 'function' ? opts.onSidecarTask : null;
     this.defaultCity = String(opts.defaultCity || '').trim();
+    this.screenEngine = opts.screenEngine || null;
     this.log = opts.log || console.log;
 
     // 异步旁路工具状态（绝不阻塞主通话延迟）
@@ -791,9 +793,11 @@ export class RealtimeCallEngine {
       this._noiseFloor = Math.max(40, Math.min(500, this._noiseFloor * 0.96 + rms * 0.04));
     }
 
-    const startThresh = aiSpeaking
+    const isWatchMode = Boolean(this.screenEngine && this.screenEngine.mode === 'watch_along' && this.screenEngine.hasFreshFrame());
+    const watchBoost = isWatchMode ? 1.25 : 1.0;
+    const startThresh = Math.round((aiSpeaking
       ? Math.max(500, this._noiseFloor * 3.6)
-      : Math.max(320, this._noiseFloor * 2.8);
+      : Math.max(320, this._noiseFloor * 2.8)) * watchBoost);
     const keepThresh = Math.max(220, this._noiseFloor * 2.1);
 
     if (!this._inSpeech) {
@@ -958,6 +962,21 @@ export class RealtimeCallEngine {
       }
     }
 
+    let screenImageParts = [];
+    if (this.screenEngine) {
+      const modeCmd = detectScreenModeCommand(text);
+      if (modeCmd) {
+        this.screenEngine.setMode(modeCmd.mode, 'voice_command');
+        notes.push(`[系统提示：已按对方要求将看屏模式切换为「${modeCmd.label}」，请自然简短地答应一句]`);
+      }
+      const picked = this.screenEngine.pickFramesForTurn(text);
+      if (picked.frameCount > 0) {
+        screenImageParts = picked.imageParts;
+        notes.push(picked.note);
+        this.log(`[call-screen] 随轮附带 ${picked.frameCount} 帧实时画面 (${this.screenEngine.mode})`);
+      }
+    }
+
     const elapsedMin = (Date.now() - this.startedAt) / 60000;
     if (!this._softReminderSent && elapsedMin >= this.softReminderMin) {
       this._softReminderSent = true;
@@ -965,8 +984,40 @@ export class RealtimeCallEngine {
     }
 
     const promptText = notes.length ? `${notes.join('\n')}\n对方说：${text}` : text;
-    this._pendingUserUtterance = text; // 在正式出声前保留，万一思考中被补话可合并
-    await this._runAiTurn(promptText, { vadEndAt, asrMs, userUtterance: text });
+    this._pendingUserUtterance = text;
+    await this._runAiTurn(promptText, { vadEndAt, asrMs, userUtterance: text, imageParts: screenImageParts });
+  }
+
+  async handleWatchAlongCandidate({ frames, changeScore = 0, label = '' } = {}) {
+    if (!this.active || this._ending || !this.screenEngine) return false;
+    if (this.screenEngine.mode !== 'watch_along') return false;
+    if (this._inSpeech || this._aiThinking || this._playQueueBytes > 0) return false;
+    const idleMs = Date.now() - this._lastActivityAt;
+    if (idleMs < 14000) return false;
+    const imageParts = this.screenEngine.buildWatchAlongParts(frames);
+    if (!imageParts.length) return false;
+    this.log(`[call-screen] 主动陪看检查 (Δ=${changeScore.toFixed(2)}, 静默=${Math.round(idleMs / 1000)}s, ${imageParts.length}帧)…`);
+    const promptText = [
+      `[主动陪看模式${label ? ` · ${label}` : ''}：你们正在一起看屏幕，画面刚发生了明显变化，且过去 ${Math.round(idleMs / 1000)} 秒没人说话。]`,
+      '请先看清画面细节或字幕：真有值得吐槽/夸一句/接茬的点就自然冒一句短话（≤22字）；如果画面平淡没啥好说的，严格只输出 [SILENT] 绝不硬凑话！'
+    ].join('\n');
+    const spoken = await this._runAiTurn(promptText, { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', imageParts, silentIfToken: true, isWatchAlong: true });
+    return Boolean(spoken);
+  }
+
+  async askFromScreenText(text) {
+    if (!this.active || this._ending || !String(text || '').trim()) return '';
+    const q = String(text).trim();
+    const notes = [];
+    let imageParts = [];
+    if (this.screenEngine) {
+      const picked = this.screenEngine.pickFramesForTurn(q, { force: true });
+      if (picked.frameCount > 0) { imageParts = picked.imageParts; notes.push(picked.note); }
+    }
+    this.transcript.push({ role: 'user', text: q, ts: Date.now() });
+    this._lastActivityAt = Date.now();
+    const promptText = notes.length ? `${notes.join('\n')}\n对方在看屏窗口问：${q}` : q;
+    return await this._runAiTurn(promptText, { vadEndAt: Date.now(), asrMs: 0, userUtterance: q, imageParts });
   }
 
   async _deliverSidecarResult(task, resultText, scSeq) {
@@ -990,7 +1041,7 @@ export class RealtimeCallEngine {
     );
   }
 
-  async _runAiTurn(promptText, { isGreeting = false, vadEndAt = Date.now(), asrMs = 0, userUtterance = '' } = {}) {
+  async _runAiTurn(promptText, { isGreeting = false, vadEndAt = Date.now(), asrMs = 0, userUtterance = '', imageParts = [], silentIfToken = false, isWatchAlong = false } = {}) {
     // 严格串行：启动新回合前先取消任何残留的旧回合与播放队列，杜绝双声音重叠
     if (this._turnAc) {
       this._turnAc.abort();
@@ -1007,8 +1058,7 @@ export class RealtimeCallEngine {
     let firstAudioMs = 0;
     let fillerTimer = null;
 
-    // 仅当显式开启 enableFillers 且等待超过 700ms 才垫声（默认关闭，保持纯自然语调）
-    if (this.enableFillers && !isGreeting && userUtterance.length >= 4) {
+    if (this.enableFillers && !isGreeting && !isWatchAlong && userUtterance.length >= 4) {
       const filler = this._pickFiller(userUtterance);
       if (filler) {
         fillerTimer = setTimeout(() => {
@@ -1022,18 +1072,16 @@ export class RealtimeCallEngine {
     }
 
     try {
+      const contentBlocks = Array.isArray(imageParts) && imageParts.length
+        ? [...imageParts, { type: 'text', text: promptText }]
+        : [{ type: 'text', text: promptText }];
       const fullReply = await new Promise((resolve, reject) => {
         if (ac.signal.aborted) return resolve('');
-        this.dshPendingTurn = {
-          gotChunks: false,
-          fullText: '',
-          resolve,
-          reject
-        };
+        this.dshPendingTurn = { gotChunks: false, fullText: '', resolve, reject };
         this.dshApi.sessions.prompt({
           sessionId: this.dshSessionId,
           mode: 'queue',
-          content: [{ type: 'text', text: promptText }]
+          content: contentBlocks
         }).then((resp) => {
           if (!resp?.result?.ok) {
             this.dshPendingTurn = null;
@@ -1049,19 +1097,29 @@ export class RealtimeCallEngine {
       if (mySeq !== this._turnSeq || ac.signal.aborted || this._inSpeech) {
         if (fillerTimer) clearTimeout(fillerTimer);
         if (mySeq === this._turnSeq) this._aiThinking = false;
-        return;
+        return '';
       }
 
-      const wantHangup = /\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && /(拜拜|挂啦|挂咯|晚安|再见)/.test(fullReply));
+      if (silentIfToken && /\[SILENT\]/i.test(fullReply)) {
+        if (fillerTimer) clearTimeout(fillerTimer);
+        if (mySeq === this._turnSeq) this._aiThinking = false;
+        this.log(`[call-screen] 画面平淡，保持静默 (${llmMs}ms)`);
+        return '';
+      }
+
+      const wantHangup = !isWatchAlong && (/\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && /(拜拜|挂啦|挂咯|晚安|再见)/.test(fullReply)));
       const spoken = cleanSpokenText(fullReply);
       if (!spoken) {
         if (fillerTimer) clearTimeout(fillerTimer);
         if (mySeq === this._turnSeq) this._aiThinking = false;
-        return;
+        return '';
       }
 
-      this._pendingUserUtterance = ''; // 正式开口，清空待合并缓存
+      this._pendingUserUtterance = '';
       this.transcript.push({ role: 'assistant', text: spoken, ts: Date.now() });
+      if (this.screenEngine && (imageParts.length || isWatchAlong)) {
+        this.screenEngine.recordAiComment(spoken, isWatchAlong ? 'watch_along' : 'screen_reply');
+      }
       const clauses = splitSpokenClauses(spoken);
       this._currentReplyText = spoken;
       this._playedBytesThisTurn = 0;
@@ -1114,12 +1172,14 @@ export class RealtimeCallEngine {
           }, waitLeft);
         }
       }
+      return spoken;
     } catch (err) {
       if (fillerTimer) clearTimeout(fillerTimer);
       if (!ac.signal.aborted) {
         this.log(`[call-engine] 本轮对话异常: ${err?.message ?? err}`);
       }
       if (mySeq === this._turnSeq) this._aiThinking = false;
+      return '';
     }
   }
 

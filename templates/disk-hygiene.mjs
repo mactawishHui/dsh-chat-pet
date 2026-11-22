@@ -264,6 +264,31 @@ function pruneTmpArtifacts() {
   return result;
 }
 
+/**
+ * 5. 清理唱歌引擎异常中断后可能残留的临时目录（/opt/qq-cover/work/{cover-,orig-,song-}*，超过 6 小时）
+ */
+function pruneStaleSingWork() {
+  const result = { removedDirs: 0, freedBytes: 0 };
+  const workRoot = process.env.SING_WORK_ROOT || '/opt/qq-cover/work';
+  if (!fs.existsSync(workRoot)) return result;
+  const now = Date.now();
+  try {
+    for (const ent of fs.readdirSync(workRoot, { withFileTypes: true })) {
+      if (!ent.isDirectory() || !/^(?:cover|orig|song)-/.test(ent.name)) continue;
+      const full = path.join(workRoot, ent.name);
+      const st = fs.statSync(full);
+      if (now - st.mtimeMs < 6 * 3600 * 1000) continue;
+      const bytes = dirSize(full);
+      if (!DRY_RUN) {
+        try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+      }
+      result.removedDirs += 1;
+      result.freedBytes += bytes;
+    }
+  } catch {}
+  return result;
+}
+
 async function main() {
   const protectedIds = loadProtectedSessionIds();
   const callActive = await isCallCurrentlyActive();
@@ -272,13 +297,15 @@ async function main() {
   const rAtt = gcUnreferencedAttachments(rSess.prunedIds);
   const rTts = pruneOldTtsCache();
   const rTmp = pruneTmpArtifacts();
+  const rSing = pruneStaleSingWork();
 
-  const totalFreed = rSess.freedBytes + rAtt.freedBytes + rTts.freedBytes + rTmp.freedBytes;
+  const totalFreed = rSess.freedBytes + rAtt.freedBytes + rTts.freedBytes + rTmp.freedBytes + rSing.freedBytes;
   const tag = DRY_RUN ? 'DRY-RUN 预演' : '清理完成';
   log(
     `${tag} | 临时会话=${rSess.removedSessions}个(${fmtMb(rSess.freedBytes)})` +
     ` | 无主附件=${rAtt.removedObjects}个(${fmtMb(rAtt.freedBytes)}, 保护现存引用=${rAtt.liveHashes})` +
     ` | 旧TTS缓存=${rTts.removedFiles}个(${fmtMb(rTts.freedBytes)})` +
+    ` | 唱歌残留=${rSing.removedDirs}个(${fmtMb(rSing.freedBytes)})` +
     ` | /tmp残留=${rTmp.removedFiles}个` +
     ` | 合计释放 ${fmtMb(totalFreed)}`
   );

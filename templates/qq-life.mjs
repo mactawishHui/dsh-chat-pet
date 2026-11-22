@@ -17,17 +17,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { appendJournal, readJournal, lifeDayKey, formatJournalForPrompt } from './life-journal.mjs';
+import { getWeatherAndSolarHint } from './weather-solar.mjs';
+import { runMemoryConsolidation } from './memory-consolidator.mjs';
 
 const ROOT = '/opt/qq-bridge';
 const CONFIG_PATH = process.env.QQ_BRIDGE_CONFIG || path.join(ROOT, 'config.json');
 const STATE_DIR = path.join(ROOT, 'state');
 const DIARY_ARCHIVE = path.join(STATE_DIR, 'diary.jsonl');
+const MEMORY_ARCHIVE = path.join(STATE_DIR, 'memory-archive.jsonl');
 const DAILY_FEED_PATH = path.join(STATE_DIR, 'daily-feed.json');
 const MEME_KB_PATH = path.join(STATE_DIR, 'meme-kb.json');
 const SOCIAL_PATH = path.join(STATE_DIR, 'social-v2.json');
 const CALL_STATS_PATH = path.join(STATE_DIR, 'call-stats.json');
 const MILESTONES_PATH = path.join(STATE_DIR, 'milestones.json');
 const KNOWN_CAPS_PATH = path.join(STATE_DIR, 'known-capabilities.json');
+const SHARE_QUOTA_PATH = path.join(STATE_DIR, 'share-quota.json');
+const CONSOLE_TOKEN_PATH = path.join(STATE_DIR, 'console-token');
 const DEFAULT_EXAMPLES_PATH = path.join(ROOT, 'src', 'diary-examples.json');
 const BILI_PROVIDER_PATH = '/root/.dsh/profiles/web/node_modules/dsh-plugin-bilibili/lib/provider.js';
 
@@ -39,20 +44,31 @@ function loadCfg() {
   const life = raw.life || {};
   const ownerId = String(
     life.ownerUserId ||
+    raw.ownerQQ ||
     raw.socialV2?.ownerUserId ||
     (Array.isArray(raw.call?.whitelist) ? raw.call.whitelist[0] : '') ||
     ''
   ).trim();
+  let consoleToken = String(raw.consoleToken || '').trim();
+  if (!consoleToken) {
+    try { consoleToken = fs.readFileSync(CONSOLE_TOKEN_PATH, 'utf8').trim(); } catch {}
+  }
   return {
     raw,
     ownerId,
     model: life.model || { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low' },
     roleCardFile: life.roleCardFile || path.join(ROOT, 'roles', '小鲸鱼.md'),
     examplesFile: life.examplesFile || DEFAULT_EXAMPLES_PATH,
+    weatherCity: String(life.weatherCity || '').trim(),
     diaryUgcRight: Number(life.diaryUgcRight ?? 4),
     minJournalEntries: Number(life.minJournalEntries ?? 2),
     exploreMaxToolCalls: Number(life.exploreMaxToolCalls ?? 8),
     drawChance: Number(life.drawChance ?? 0.35),
+    diaryDrawChance: Number(life.diaryDrawChance ?? 0.9),
+    diaryMaxDrawImages: Number(life.diaryMaxDrawImages ?? 2),
+    proactiveShareEnabled: life.proactiveShareEnabled !== false,
+    bridgeBase: `http://127.0.0.1:${Number(raw.consolePort || 3100)}`,
+    consoleToken,
     onebotUrl: String(raw.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, ''),
     onebotToken: raw.snowluma?.accessToken || '',
     dshBaseUrl: raw.dsh?.baseUrl || 'http://127.0.0.1:3080',
@@ -228,34 +244,39 @@ function detectAndLoadMilestones(cfg, day) {
 
 async function explore(cfg) {
   const day = lifeDayKey();
-  const feed = readJson(DAILY_FEED_PATH, { hotItems: [] });
+  const feed = readJson(DAILY_FEED_PATH, { hotItems: [], communityItems: [] });
   const kb = readJson(MEME_KB_PATH, { memes: [] });
   const todayRows = readJournal({ day });
+  const weatherSolar = await getWeatherAndSolarHint(cfg.weatherCity).catch(() => null);
   const hot = (feed.hotItems || []).slice(0, 8).map((h, i) => `${i + 1}. [${h.tag || h.source}] ${h.title}：${h.gist}`).join('\n');
+  const community = (feed.communityItems || []).slice(0, 6).map((c, i) => `${i + 1}. [${c.source}] ${c.title}${c.extra ? '：' + c.extra : ''}`).join('\n');
   const memes = (kb.memes || []).slice(-6).reverse().map((m) => `- 「${m.name}」：${m.meaning}`).join('\n');
   const quota = readJson(path.join(STATE_DIR, 'bilibili-quota.json'), {});
   const seen = todayRows.length ? formatJournalForPrompt(todayRows.slice(-12)) : '（今天还没记过什么）';
 
+  const canShareNow = canProactiveShare(cfg, day);
   const prompt = [
     personaText(cfg),
-    `【现在】${nowText()}（北京时间）。这是你自己的闲逛时间：没有人在等你回消息，也不用跟谁汇报，就像人下午刷会儿手机。`,
-    `【今天刷手机看到的热点】\n${hot || '（今天的热点还没刷出来）'}`,
+    `【现在】${nowText()}（北京时间）。这是你自己的闲逛时间：没有人在等你回消息，也不用跟谁汇报，就像人下午或傍晚刷会儿手机看世界。`,
+    weatherSolar?.line ? `【今天节气与天气】${weatherSolar.line}` : '',
+    `【今天刷手机看到的热点与新片】\n${hot || '（今天的热点还没刷出来）'}`,
+    community ? `【社区热议 / 科技与播客发现】\n${community}` : '',
     `【最近学到的梗】\n${memes || '（暂无）'}`,
     `【你今天已经记过的事（别重复）】\n${seen}`,
     `【B站今日已用】视频/字幕 ${quota.video || 0} 次，搜索 ${quota.search || 0} 次。`,
     [
-      '【怎么逛】',
-      '1. 从上面挑 1~2 件你真心好奇的事去看看（比如一部新片的口碑、一个离谱热搜的来龙去脉、一个新梗的出处视频），也可以完全按自己兴趣搜点别的（游戏、动画、美食、音乐都行）。',
-      '2. 可用工具：bilibili_search 搜视频、bilibili_video 看视频信息/数据/简介、bilibili_subtitles 看字幕了解内容；mcp__web-search-safe__web_search 查新闻来龙去脉。',
+      '【怎么逛（视野放宽，别只盯热搜）】',
+      '1. 从上面挑 1~2 件你真心好奇的事深挖（可以是新电影豆瓣口碑/影评、B站宝藏UP主或整活视频、知乎/豆瓣有趣讨论、播客冷知识、独立游戏/新番/科技趣闻，或者一个新梗的出处），也可以完全按自己当下的兴致搜点别的好玩的。',
+      '2. 可用工具：bilibili_search 搜视频、bilibili_video 看视频信息/数据/简介、bilibili_subtitles 看字幕了解内容；mcp__web-search-safe__web_search 查豆瓣影评、社区讨论、冷知识或新闻来龙去脉。',
       `3. 总共最多调用 ${cfg.exploreMaxToolCalls} 次工具，够了就停，别硬刷。`,
-      '4. 看的时候留意具体细节：视频标题、UP 主、哪个画面或哪句话戳到你、弹幕/评论在玩什么梗。'
+      '4. 看的时候留意具体细节：真实标题、UP 主/作品名、哪个反差或哪句神评把你逗笑了。'
     ].join('\n'),
     [
       '【最后】逛完以后，只输出一个 JSON 对象（不要任何多余文字）：',
-      '{"notes":[{"kind":"bilibili|news|meme|thought","title":"具体看了啥（真实标题/事件名）","detail":"具体内容或细节（≤80字）","feeling":"你自己的真实感受、吐槽或联想（口语，≤60字）"}],"drawIdea":"如果此刻突然想画点什么，写一句画面描述；不想画就留空字符串"}',
+      `{"notes":[{"kind":"bilibili|news|meme|thought","title":"具体看了啥（真实标题/作品/事件名）","detail":"具体内容或细节（≤80字）","feeling":"你自己的真实感受、吐槽或联想（口语，≤60字）"}],"drawIdea":"如果此刻突然想画点什么，写一句画面描述；不想画就留空字符串"${canShareNow ? ',"shareMessage":"如果这次真刷到一条笑死你或特别值得顺手安利给常聊朋友的宝藏内容，写一句极自然口语分享（可带真实B站或新闻链接，≤65字）；普通内容宁可留空字符串"' : ''}}`,
       'notes 写 1~4 条，全是你自己的所见所感；不要写聊天对象的私事。'
     ].join('\n')
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 
   log('[explore] 开始闲逛…');
   const { text, toolCalls } = await runDshTurn(cfg, { preset: 'qq-life', title: `闲逛-${day}`, prompt, timeoutMs: 6 * 60 * 1000 });
@@ -274,26 +295,71 @@ async function explore(cfg) {
 
   const idea = String(out.drawIdea || '').trim();
   if (idea && Math.random() < cfg.drawChance) await drawForSelf(cfg, idea);
+
+  const shareMsg = String(out.shareMessage || '').trim();
+  if (canShareNow && shareMsg && shareMsg.length >= 8) {
+    await sendProactiveShare(cfg, day, shareMsg);
+  }
+}
+
+function canProactiveShare(cfg, day) {
+  if (!cfg.proactiveShareEnabled || !cfg.ownerId) return false;
+  const bjHour = new Date(Date.now() + 8 * 3600e3).getUTCHours();
+  if (bjHour < 10 || bjHour >= 22) return false;
+  const q = readJson(SHARE_QUOTA_PATH, {});
+  if (q.day === day && Number(q.count || 0) >= 1) return false;
+  const social = readJson(SOCIAL_PATH, { conversations: {} });
+  const conv = social.conversations?.[`private:${cfg.ownerId}`];
+  const lastAct = Math.max(Number(conv?.lastIncomingAt || 0), Number(conv?.lastAiReplyAt || 0));
+  if (lastAct && Date.now() - lastAct < 45 * 60 * 1000) return false;
+  return true;
+}
+
+async function sendProactiveShare(cfg, day, message) {
+  try {
+    const res = await fetch(`${cfg.bridgeBase}/api/socialV2/proactive-share`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(cfg.consoleToken ? { 'X-Console-Token': cfg.consoleToken } : {})
+      },
+      body: JSON.stringify({ key: `private:${cfg.ownerId}`, text: message.slice(0, 180) }),
+      signal: AbortSignal.timeout(12000)
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.ok) {
+      writeJson(SHARE_QUOTA_PATH, { day, count: 1, at: Date.now() });
+      log(`[explore] 顺手向常聊朋友安利了一条宝藏内容：${message.slice(0, 60)}`);
+    }
+  } catch (e) {
+    log('[explore] 主动安利发送失败（跳过）:', e.message);
+  }
+}
+
+async function callDrawService(cfg, prompt, style = 'journal') {
+  const qf = path.join(STATE_DIR, 'draw-quota.json');
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const q = readJson(qf, {});
+  const count = q.day === today ? Number(q.count) || 0 : 0;
+  if (count >= cfg.drawLimit) { log('[draw] 今日画画额度已满，跳过'); return null; }
+  const res = await fetch(`${cfg.drawUrl}/draw`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: prompt.slice(0, 500), style }),
+    signal: AbortSignal.timeout(180000)
+  });
+  const gen = await res.json().catch(() => ({}));
+  if (!gen.ok || !gen.file) throw new Error(gen.error || `HTTP ${res.status}`);
+  fs.writeFileSync(qf, JSON.stringify({ day: today, count: count + 1 }));
+  return gen.file;
 }
 
 async function drawForSelf(cfg, idea) {
-  const qf = path.join(STATE_DIR, 'draw-quota.json');
-  const today = new Date().toISOString().slice(0, 10);
-  const q = readJson(qf, {});
-  const count = q.day === today ? Number(q.count) || 0 : 0;
-  if (count >= cfg.drawLimit) { log('[explore] 今日画画额度已满，跳过'); return; }
   try {
-    const res = await fetch(`${cfg.drawUrl}/draw`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: idea.slice(0, 400), style: cfg.drawStyle }),
-      signal: AbortSignal.timeout(180000)
-    });
-    const gen = await res.json().catch(() => ({}));
-    if (!gen.ok || !gen.file) throw new Error(gen.error || `HTTP ${res.status}`);
-    fs.writeFileSync(qf, JSON.stringify({ day: today, count: count + 1 }));
-    appendJournal({ kind: 'draw', title: idea.slice(0, 80), detail: '闲逛时自己随手画的', source: 'explore', image: gen.file });
-    log(`[explore] 随手画了一张：${path.basename(gen.file)}`);
+    const file = await callDrawService(cfg, idea.slice(0, 400), cfg.drawStyle);
+    if (!file) return;
+    appendJournal({ kind: 'draw', title: idea.slice(0, 80), detail: '闲逛时自己随手画的', source: 'explore', image: file });
+    log(`[explore] 随手画了一张：${path.basename(file)}`);
   } catch (e) {
     log('[explore] 画画失败:', e.message);
   }
@@ -568,7 +634,100 @@ function dedupeRows(rows) {
   });
 }
 
-async function buildDiaryContext(cfg, day) {
+function readJsonlFile(p) {
+  try {
+    return fs.readFileSync(p, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function dayToUtcMs(dayStr) {
+  const m = String(dayStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return 0;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** 回忆杀 / 纪念日触发引擎：扫描里程碑、旧日记、归档记忆、历史说说，识别 7天/14天/满月/50天/100天/半年/周年 节点 */
+function collectFlashbacks(day, posts = []) {
+  const curUtc = dayToUtcMs(day);
+  if (!curUtc) return [];
+  const [, curM, curD] = day.split('-').map(Number);
+
+  const labelFor = (itemDay) => {
+    const t = dayToUtcMs(itemDay);
+    if (!t || t >= curUtc) return '';
+    const diff = Math.round((curUtc - t) / 86400e3);
+    const [y, m, d] = itemDay.split('-').map(Number);
+    if (diff === 7) return '整整一周前的今天';
+    if (diff === 14) return '两周前的今天';
+    if (diff === 30) return '30天前的今天';
+    if (diff >= 27 && d === curD && !(y === Number(day.slice(0, 4)) && m === curM)) {
+      const months = (Number(day.slice(0, 4)) - y) * 12 + (curM - m);
+      if (months === 1) return '整整一个月前的今天（满月纪念）';
+      if (months === 6) return '半年前的今天';
+      if (months === 12) return '一年前的今天（周年纪念）';
+      if (months > 1 && months <= 11) return `${months}个月前的今天`;
+      if (months > 12 && months % 12 === 0) return `${months / 12}年前的今天`;
+    }
+    if (diff === 50) return '50天前的今天';
+    if (diff === 100) return '100天前的今天（百日纪念）';
+    if (diff === 180) return '半年前的今天';
+    if (diff === 365) return '一年前的今天（周年纪念）';
+    return '';
+  };
+
+  const hits = [];
+  const seen = new Set();
+  const pushHit = (itemDay, kind, text) => {
+    const label = labelFor(itemDay);
+    if (!label) return;
+    const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+    if (!clean || PRIVACY.test(clean) || PRIVACY_TEXT.test(clean)) return;
+    const key = `${itemDay}|${clean.slice(0, 16)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const weight = /周年|年前/.test(label) ? 100 : (/满月|个月前|百日|半年/.test(label) ? 80 : 40);
+    hits.push({ weight, line: `${label}（${itemDay}｜${kind}）：${clean}` });
+  };
+
+  // 1. 成长里程碑
+  const ms = readJson(MILESTONES_PATH, { items: [] });
+  for (const m of (ms.items || [])) {
+    if (m?.day) pushHit(m.day, '成长里程碑', `${m.title}${m.detail ? '——' + m.detail : ''}`);
+  }
+  // 2. 归档日记
+  for (const d of readJsonlFile(DIARY_ARCHIVE)) {
+    if (d?.day) pushHit(d.day, '旧日记', d.content);
+  }
+  // 3. 海马体归档的历史记忆
+  for (const a of readJsonlFile(MEMORY_ARCHIVE)) {
+    if (a?.eventDay) pushHit(a.eventDay, '记忆归档', a.text);
+  }
+  // 4. 历史 QQ 空间说说（含早期创世纪等里程碑说说）
+  for (const p of (posts || [])) {
+    if (!p?.time || !p?.content) continue;
+    const pDay = new Date(p.time + 8 * 3600e3).toISOString().slice(0, 10);
+    pushHit(pDay, '当年说说', p.content);
+  }
+
+  return hits.sort((a, b) => b.weight - a.weight).slice(0, 4).map((x) => x.line);
+}
+
+function syncFlashbacksToDailyFeed(day, flashbacks) {
+  try {
+    const feed = readJson(DAILY_FEED_PATH, { hotItems: [], recentMemes: [] });
+    feed.flashbacks = flashbacks;
+    feed.flashbacksDay = day;
+    writeJson(DAILY_FEED_PATH, feed);
+  } catch {}
+}
+
+async function buildDiaryContext(cfg, day, posts = []) {
   const social = readJson(SOCIAL_PATH, { conversations: {} });
   const kb = readJson(MEME_KB_PATH, { memes: [] });
   const aliasMap = buildNameAliasMap(social, cfg.ownerId);
@@ -587,6 +746,9 @@ async function buildDiaryContext(cfg, day) {
   const todayMemes = collectTodayMemes(day, kb);
   const chats = collectTodayChats(day, social, cfg, aliasMap);
   const longTerm = collectLongTermMemory(social, aliasMap);
+  const weatherSolar = await getWeatherAndSolarHint(cfg.weatherCity).catch(() => null);
+  const flashbacks = collectFlashbacks(day, posts);
+  if (day === lifeDayKey()) syncFlashbacksToDailyFeed(day, flashbacks);
   const images = rows.filter((r) => r.image && fs.existsSync(r.image) && /\.(png|jpe?g|gif|webp)$/i.test(r.image));
 
   const materialScore =
@@ -594,9 +756,10 @@ async function buildDiaryContext(cfg, day) {
     Math.min(3, todayMemes.length) +
     calls.count * 2 +
     chats.episodesCount +
-    milestones.todayItems.length * 2;
+    milestones.todayItems.length * 2 +
+    (flashbacks.length ? 1 : 0);
 
-  return { rows, selfRows, milestones, calls, todayMemes, chats, longTerm, images, materialScore };
+  return { rows, selfRows, milestones, calls, todayMemes, chats, longTerm, weatherSolar, flashbacks, images, materialScore };
 }
 
 // ───────────────────────────── 日记审查与发布 ─────────────────────────────
@@ -663,19 +826,61 @@ function formatContextSections(ctx) {
     parts.push(`【六、长期记忆里的背景（仅供参考，不必硬塞）】\n${ctx.longTerm.join('\n')}`);
   }
 
+  if (ctx.weatherSolar?.line) {
+    parts.push(`【七、今天的节气与天气（自然感知，有感觉再顺嘴提）】\n- ${ctx.weatherSolar.line}`);
+  }
+
+  if (ctx.flashbacks?.length) {
+    parts.push(`【八、那年/那月今日的回忆杀与纪念日（有触动可以自然感慨一句，没感觉不必硬提）】\n${ctx.flashbacks.map((f) => `- ${f}`).join('\n')}`);
+  }
+
   return parts.join('\n\n');
 }
 
-async function diary(cfg, { dryRun = false, force = false, dayOverride = '' } = {}) {
+const VALID_DRAW_STYLES = new Set(['doodle', 'journal', 'watercolor', 'pencil', 'sketch']);
+
+async function generateDiaryIllustrations(cfg, { moodStyle = 'journal', drawScenes = [], existingImg = '' } = {}) {
+  const outFiles = [];
+  if (existingImg && fs.existsSync(existingImg)) outFiles.push(existingImg);
+
+  const style = VALID_DRAW_STYLES.has(moodStyle) ? moodStyle : 'journal';
+  const maxTotal = Math.max(1, Math.min(2, cfg.diaryMaxDrawImages));
+  const scenes = (Array.isArray(drawScenes) ? drawScenes : [])
+    .map((s) => String(s || '').trim())
+    .filter((s) => s.length >= 6);
+
+  for (const scene of scenes) {
+    if (outFiles.length >= maxTotal) break;
+    // 确保画面保持小鲸鲸 Q 版/手账辨识度，且无乱码文字
+    const hasWhale = /鲸|whale/i.test(scene);
+    const fullPrompt = [
+      hasWhale ? scene : `可爱的蓝白圆胖Q版小鲸鱼（或蓝白渐变长发蓝瞳小鲸鱼娘，睁眼），${scene}`,
+      '手账插画构图，纯画面表达，不要出现任何汉字、英文、字母、数字或水印'
+    ].join('，');
+    try {
+      log(`[diary-draw] 生成日记插画（style=${style}）：${scene.slice(0, 60)}…`);
+      const file = await callDrawService(cfg, fullPrompt, style);
+      if (file) {
+        outFiles.push(file);
+        log(`[diary-draw] ✓ 插画已生成：${path.basename(file)}`);
+      }
+    } catch (e) {
+      log(`[diary-draw] 插画生成失败（跳过不影响发文字）: ${e.message}`);
+    }
+  }
+  return outFiles;
+}
+
+async function diary(cfg, { dryRun = false, force = false, dayOverride = '', withDraw = false } = {}) {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride) ? dayOverride : lifeDayKey();
-  const posts = await recentPosts(cfg, 15);
+  const posts = await recentPosts(cfg, 30);
   if (posts === null) { log('[diary] 读不到说说列表，保守起见今天不发'); return; }
   if (posts[0] && lifeDayKey(posts[0].time) === day && !dryRun && !force) {
     log('[diary] 今天已经发过说说了（每天最多 1 条），跳过');
     return;
   }
 
-  const ctx = await buildDiaryContext(cfg, day);
+  const ctx = await buildDiaryContext(cfg, day, posts);
   if (ctx.materialScore < cfg.minJournalEntries && !dryRun && !force) {
     log(`[diary] 今天素材量太少（score=${ctx.materialScore}），不硬写`);
     return;
@@ -694,25 +899,29 @@ async function diary(cfg, { dryRun = false, force = false, dayOverride = '' } = 
     personaText(cfg),
     `【现在】${nowText()}（北京时间），你在给自己写今天的日记（对应日期 ${day}），会发到 QQ 空间（仅好友可见）。`,
     formatContextSections(ctx),
-    ctx.images.length ? `【今天可以配的图（可选，最多 1 张）】\n${imageList}` : '【配图】今天没有可配的图。',
+    ctx.images.length ? `【今天已有的备选图（可选，优先考虑自己为日记新画手绘插画）】\n${imageList}` : '【已有备选图】今天没有现成图，可以直接为日记画 1~2 张手绘插画。',
     styleBlock,
     `【你过去发过的日记/说说（你的成长时间线；可偶尔自然回望对比，但不要重复旧的开头、句式和已经写过的话题）】\n${prevText}`,
     [
-      '【怎么写（核心要求：活人感 + 重吐槽 + 碎碎念）】',
+      '【怎么写（核心要求：活人感 + 重吐槽 + 碎碎念 + 手绘手账配图）】',
       '1. 像真人在深夜窝被窝发仅好友可见的朋友圈：多吐槽、多碎碎念、带点嘴硬带笑和自嘲！可以一上来就「笑死」「真是绝了」「服了」「不是，怎么会…」，一边嫌弃一边叨叨，想到哪唠到哪，别端着写散文或豆瓣影评。',
       '2. 别搞「三段式平均分配 + 每段结尾硬点题」：挑 1~2 件今天最上头、最好笑或最戳你的事顺着一个情绪唠透（别的顺嘴带一笔就行，千万别像周报一样逐条汇报，也别每段最后硬拔高一句大道理）。',
       '3. 人情味藏在鲜活吐槽和嘴硬心软里：比如嘴上嫌麻烦戏多、结果自己老老实实照做了；或者表面装淡定、其实暗爽偷看两遍；或者对着离谱事笑出声又顺手补一刀。别叫朋友「对方」「对面」「某人」，太冷像做笔录——直接省主语，或者自然说「他」「那家伙」「聊得多的朋友」「群里」。',
       '4. 长短随当天心情和话瘾浮动：今天戏多、想狠狠吐槽和碎碎念就写 160~300 字（1~3 小段）；事情少就写 80~140 字一小段吐个槽拉倒，完全不用凑字数。',
-      '5. 主角永远是你自己：刷到的视频、新解锁的本事、接过的梗、打过的电话、过去的记忆全都能揉进来，但落脚点永远是「我自己的吐槽、暗爽、嫌弃和小心思」。',
-      '6. 严禁出现：Markdown 符号、括号动作描写、emoji 堆砌、「对方」「愿你」「希望明天」「收获满满」「意义非凡」「先记着」等客套/鸡汤词，以及任何人的隐私（健康检查、家庭、收入、住址、号码）；最近用过的「水里/泡泡/深海」意象也先歇歇。',
-      '7. 如果今天真的完全没槽可吐、没话想说，可以不写。'
+      '5. 主角永远是你自己：刷到的视频、新解锁的本事、接过的梗、打过的电话、节气天气、过去的回忆全都能揉进来，但落脚点永远是「我自己的吐槽、暗爽、嫌弃和小心思」。',
+      '6. 为今天的日记构思 1~2 张手绘插画（做成手账感！）：',
+      '   - 吐槽搞笑/玩梗日 → moodStyle 选 "doodle"（便签纸马克笔涂鸦感）；',
+      '   - 日常逛世界/暖心/走心日 → moodStyle 选 "journal"（日式水彩彩铅手账淡彩）或 "watercolor" / "pencil"；',
+      '   - drawScenes 写 1~2 条具体画面描述（50~90字，推荐画圆滚滚蓝白Q版小鲸鱼，或Q版蓝白渐变长发少女戴白色发箍带小鲸鱼尾巴，睁眼、画在点阵手账本或便签纸上，紧扣今天正文里最搞笑或最有画面感的瞬间，严禁要求画文字/对话框/字幕！）。',
+      '7. 严禁出现：Markdown 符号、括号动作描写、emoji 堆砌、「对方」「愿你」「希望明天」「收获满满」「意义非凡」「先记着」等客套/鸡汤词，以及任何人的隐私（健康检查、家庭、收入、住址、号码）；最近用过的「水里/泡泡/深海」意象也先歇歇。',
+      '8. 如果今天真的完全没槽可吐、没话想说，可以不写。'
     ].join('\n'),
-    '【输出】只输出一个 JSON 对象：{"post": true 或 false, "content": "日记正文（post 为 false 时留空）", "image": 配图序号（数字，不配图写 0）}'
+    '【输出】只输出一个 JSON 对象：{"post": true 或 false, "content": "日记正文（post 为 false 时留空）", "image": 已有备选图序号（通常写 0 改用新画手绘）, "moodStyle": "doodle|journal|watercolor|pencil", "drawScenes": ["插画1画面描述", "可选插画2画面描述"]}'
   ].filter(Boolean).join('\n\n');
 
   let prompt = basePrompt;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    log(`[diary] 写日记（day=${day}，第 ${attempt} 次，素材分=${ctx.materialScore}：自逛${ctx.selfRows.length}/新本事${ctx.milestones.todayItems.length}/通话${ctx.calls.count}/新梗${ctx.todayMemes.length}/聊天${ctx.chats.episodesCount}幕，语感样例=${styleExamples.map((x) => x.id).join(',') || '无'}）…`);
+    log(`[diary] 写日记（day=${day}，第 ${attempt} 次，素材分=${ctx.materialScore}：自逛${ctx.selfRows.length}/新本事${ctx.milestones.todayItems.length}/通话${ctx.calls.count}/新梗${ctx.todayMemes.length}/聊天${ctx.chats.episodesCount}幕/回忆${ctx.flashbacks.length}，语感样例=${styleExamples.map((x) => x.id).join(',') || '无'}）…`);
     const { text } = await runDshTurn(cfg, { preset: 'qq-diary', title: `日记-${day}-${attempt}`, prompt, timeoutMs: 3 * 60 * 1000 });
     const out = parseJsonLoose(text);
     if (!out) { log('[diary] 输出不是 JSON：', String(text).slice(0, 160)); return; }
@@ -726,24 +935,63 @@ async function diary(cfg, { dryRun = false, force = false, dayOverride = '' } = 
       continue;
     }
     const idx = Number(out.image) || 0;
-    const img = idx >= 1 && idx <= ctx.images.length ? ctx.images[idx - 1].image : '';
-    if (dryRun) {
-      log(`[diary] [dry-run] 通过审查（${cjkLen(content)} 字，ugc_right=${cfg.diaryUgcRight}${img ? '，配图 ' + path.basename(img) : ''}）：\n${content}`);
+    const existingImg = idx >= 1 && idx <= ctx.images.length ? ctx.images[idx - 1].image : '';
+    const moodStyle = String(out.moodStyle || 'journal').trim();
+    const drawScenes = Array.isArray(out.drawScenes) ? out.drawScenes.filter(Boolean).slice(0, cfg.diaryMaxDrawImages) : [];
+
+    if (dryRun && !withDraw) {
+      log(`[diary] [dry-run] 通过审查（${cjkLen(content)} 字，ugc_right=${cfg.diaryUgcRight}，拟画风格=${moodStyle}，插画方案=${drawScenes.length}张）：\n${content}\n\n[手绘规划] ${drawScenes.map((s, i) => `图${i + 1}(${moodStyle}): ${s}`).join('\n') || '无'}`);
       return;
     }
-    const data = await onebot(cfg, 'send_qzone_msg', { content, ...(img ? { images: [`file://${img}`] } : {}), ugc_right: cfg.diaryUgcRight });
-    fs.appendFileSync(DIARY_ARCHIVE, JSON.stringify({ at: Date.now(), day, content, image: img || null, tid: data?.tid || null, ugcRight: cfg.diaryUgcRight }) + '\n', 'utf8');
-    try { fs.appendFileSync(path.join(STATE_DIR, 'qq-activity.log'), `[${new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 19)}] [diary] 发了今天的日记说说（${cjkLen(content)} 字${img ? '，带图' : ''}）\n`); } catch {}
-    log(`[diary] 已发布今天的日记（tid=${data?.tid || '?'}，${cjkLen(content)} 字${img ? '，带图' : ''}）`);
+
+    let finalImages = existingImg ? [existingImg] : [];
+    const shouldDraw = drawScenes.length > 0 && (withDraw || Math.random() < cfg.diaryDrawChance);
+    if (shouldDraw) {
+      finalImages = await generateDiaryIllustrations(cfg, { moodStyle, drawScenes, existingImg });
+    }
+
+    if (dryRun) {
+      log(`[diary] [dry-run+draw] 通过审查（${cjkLen(content)} 字，风格=${moodStyle}，已生成配图=${finalImages.map((f) => path.basename(f)).join(', ') || '无'}）：\n${content}`);
+      return;
+    }
+
+    const data = await onebot(cfg, 'send_qzone_msg', {
+      content,
+      ...(finalImages.length ? { images: finalImages.map((f) => `file://${f}`) } : {}),
+      ugc_right: cfg.diaryUgcRight
+    });
+    fs.appendFileSync(DIARY_ARCHIVE, JSON.stringify({
+      at: Date.now(),
+      day,
+      content,
+      image: finalImages[0] || null,
+      images: finalImages,
+      moodStyle,
+      tid: data?.tid || null,
+      ugcRight: cfg.diaryUgcRight
+    }) + '\n', 'utf8');
+    try {
+      fs.appendFileSync(path.join(STATE_DIR, 'qq-activity.log'), `[${new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 19)}] [diary] 发了今天的日记说说（${cjkLen(content)} 字${finalImages.length ? `，配手绘 ${finalImages.length} 张` : ''}）\n`);
+    } catch {}
+    log(`[diary] 已发布今天的日记（tid=${data?.tid || '?'}，${cjkLen(content)} 字${finalImages.length ? `，配图 ${finalImages.map((f) => path.basename(f)).join(', ')}` : ''}）`);
     return;
   }
 }
 
 async function previewContext(cfg, dayOverride = '') {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride) ? dayOverride : lifeDayKey();
-  const ctx = await buildDiaryContext(cfg, day);
+  const posts = (await recentPosts(cfg, 30)) || [];
+  const ctx = await buildDiaryContext(cfg, day, posts);
   console.log(`=== Diary Context Preview (${day}, score=${ctx.materialScore}) ===\n`);
   console.log(formatContextSections(ctx));
+}
+
+async function previewFlashbacks(cfg, dayOverride = '') {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride) ? dayOverride : lifeDayKey();
+  const posts = (await recentPosts(cfg, 30)) || [];
+  const hits = collectFlashbacks(day, posts);
+  console.log(`=== Flashbacks for ${day} (${hits.length} hits) ===`);
+  for (const h of hits) console.log('-', h);
 }
 
 function getFlagValue(prefix) {
@@ -761,10 +1009,18 @@ if (cmd === 'explore') {
   job = diary(cfg, {
     dryRun: process.argv.includes('--dry-run'),
     force: process.argv.includes('--force'),
+    withDraw: process.argv.includes('--with-draw'),
     dayOverride
   });
 } else if (cmd === 'preview-context') {
   job = previewContext(cfg, dayOverride);
+} else if (cmd === 'flashbacks') {
+  job = previewFlashbacks(cfg, dayOverride);
+} else if (cmd === 'sleep-tidy') {
+  job = runMemoryConsolidation({
+    dryRun: process.argv.includes('--dry-run'),
+    force: process.argv.includes('--force')
+  });
 } else if (cmd === 'milestone') {
   const title = process.argv[3];
   const detail = process.argv.slice(4).join(' ');
@@ -772,7 +1028,7 @@ if (cmd === 'explore') {
   console.log(item ? `[milestone] 已记录：${item.day} ${item.title}` : '[milestone] 未写入（标题为空或今天已存在）');
   process.exit(0);
 } else {
-  console.error('用法: node qq-life.mjs explore | diary [--dry-run] [--force] [--day=YYYY-MM-DD] | preview-context [--day=YYYY-MM-DD] | milestone <标题> [说明]');
+  console.error('用法: node qq-life.mjs explore | diary [--dry-run] [--with-draw] [--force] [--day=YYYY-MM-DD] | preview-context [--day=YYYY-MM-DD] | flashbacks [--day=YYYY-MM-DD] | sleep-tidy [--dry-run] [--force] | milestone <标题> [说明]');
   process.exit(2);
 }
 job.then(() => process.exit(0)).catch((e) => { console.error('[life] fatal:', e?.stack || e); process.exit(1); });

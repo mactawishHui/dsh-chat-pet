@@ -14,6 +14,9 @@ import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { RealtimeCallEngine } from './call-engine.mjs';
+import { fetchCityWeather } from './weather-solar.mjs';
+import { lookupMeme } from './surf-kb.mjs';
+import { serperGoogleSearch } from './reverse-image.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,7 +41,8 @@ function loadConfig() {
     silenceAskSec: Number(call.silenceAskSec ?? 120),
     silenceHangupSec: Number(call.silenceHangupSec ?? 150),
     port: Number(call.port ?? 3300),
-    bridgeBase: `http://127.0.0.1:${Number(raw.console?.port || 3100)}`,
+    bridgeBase: `http://127.0.0.1:${Number(raw.consolePort || raw.console?.port || 3100)}`,
+    defaultCity: String(raw.life?.weatherCity || '').trim(),
     dshBaseUrl: raw.dsh?.baseUrl || 'http://127.0.0.1:3080',
     dshAuthToken: raw.dsh?.authToken || '',
     onebotHttp: `http://127.0.0.1:${Number(raw.snowluma?.httpPort || 3000)}`,
@@ -465,7 +469,41 @@ class NativeQQCallDaemon {
       dailyLimitMin: cfg.dailyLimitMin,
       silenceAskSec: cfg.silenceAskSec,
       silenceHangupSec: cfg.silenceHangupSec,
+      defaultCity: cfg.defaultCity,
       log,
+      onSidecarTask: async (task) => {
+        if (task.kind === 'remember') {
+          const token = readConsoleToken();
+          const res = await fetch(`${cfg.bridgeBase}/api/call/note`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              ...(token ? { 'X-Console-Token': token } : {})
+            },
+            body: JSON.stringify({ callerId: uin, callerName, text: task.query }),
+            signal: AbortSignal.timeout(4000)
+          });
+          if (res.ok) return `已把「${task.query}」记进长期提醒事项，之后聊 QQ 也能记得`;
+          return '';
+        }
+        if (task.kind === 'weather') {
+          const w = await fetchCityWeather(task.city);
+          return w?.summary || `暂时没查到${task.city}的实时天气`;
+        }
+        if (task.kind === 'meme') {
+          const r = await lookupMeme(task.query, { allowLive: true, fetchImage: false, log });
+          const top = r?.items?.[0];
+          if (!top) return `没查到「${task.query}」的确切出处`;
+          const rep = Array.isArray(top.replies) && top.replies.length ? `；常用接梗：${top.replies[0]}` : '';
+          return `「${top.name}」：${top.meaning || top.origin || ''}${rep}`.slice(0, 180);
+        }
+        if (task.kind === 'web_search') {
+          const hits = await serperGoogleSearch(task.query, { num: 3 });
+          if (!Array.isArray(hits) || !hits.length) return `网上暂时没搜到「${task.query}」的明确结果`;
+          return hits.slice(0, 2).map((h) => `${h.title}（${String(h.snippet || '').slice(0, 70)}）`).join('；');
+        }
+        return '';
+      },
       onAudioOut: (pcm24kBuf) => {
         if (this.state !== 'in_call' || !pcm24kBuf?.length) return;
         const p = this.pacatProc || this._spawnPacat();

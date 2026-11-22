@@ -144,6 +144,61 @@ function lookupLocalMemeSync(utterance, memeKbPath) {
   return null;
 }
 
+const KNOWN_CITIES_RE = /(北京|上海|广州|深圳|杭州|成都|重庆|武汉|西安|南京|天津|苏州|长沙|郑州|沈阳|大连|青岛|济南|厦门|福州|合肥|昆明|哈尔滨|长春|太原|大同|石家庄|南昌|贵阳|南宁|海口|兰州|银川|西宁|拉萨|乌鲁木齐|呼和浩特|无锡|宁波|佛山|东莞|珠海|温州|香港|澳门|台北)/;
+
+/**
+ * 极速（<0.2ms）通话异步旁路意图检测：在不拖慢主对话 0ms 的前提下识别是否需要后台查工具或记备忘。
+ */
+export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = false } = {}) {
+  const t = String(utterance || '').trim();
+  if (!t || t.length < 4) return null;
+
+  // 1. 记备忘 / 提醒事项（优先级最高，本地毫秒级写回）
+  if (/(帮我记一下|帮我记个|给我记一下|记一下|记个备忘|别忘了提醒我|下次提醒我|明天提醒我|后天提醒我|提醒我一下)/.test(t)) {
+    const clean = t
+      .replace(/^(?:诶|哎|那个|对了|麻烦|你)?(?:帮我|给我)?(?:记一下|记个备忘|记个|别忘了)?[，,：:\s]*/g, '')
+      .trim() || t;
+    return { kind: 'remember', query: clean, label: '记下提醒事项', rawText: t };
+  }
+
+  // 2. 查天气（识别提到的城市或回退默认城市）
+  if (/(天气|下雨|下雪|降温|升温|多少度|几度|冷不冷|热不热|刮风)/.test(t) &&
+      /(查|看|明天|今天|后天|现在|外面|怎么样|几度|多少度|冷|热|带伞|穿)/.test(t)) {
+    const known = t.match(KNOWN_CITIES_RE);
+    const dynamic = !known ? t.match(/([\u4e00-\u9fa5]{2,3})(?:市|省)?(?:今天|明天|后天|现在)?的?天气/) : null;
+    const city = (known?.[1] || dynamic?.[1] || defaultCity || '').replace(/^(明天|今天|后天|现在|外面|这边|那边)$/, '');
+    if (city) {
+      return { kind: 'weather', city, query: city, label: `查${city}天气`, rawText: t };
+    }
+    return { kind: 'web_search', query: t, label: '查天气', rawText: t };
+  }
+
+  // 3. 查梗（仅当本地 0ms 梗库未命中时才走后台实时查梗）
+  if (!localMemeHit && /(什么梗|啥梗|啥意思|什么意思|查一下.*梗|搜一下.*梗)/.test(t)) {
+    const q = t
+      .replace(/^(?:诶|哎|那个|这个|刚才说的|你说的|帮我|你)+/g, '')
+      .replace(/(?:帮我|你)?(?:查一下|搜一下|问一下|知道)?/g, '')
+      .replace(/(?:到底)?(?:是)?(?:什么梗|啥梗|什么意思|啥意思)[呀啊吗呢？?。！!]*/g, '')
+      .trim();
+    if (q.length >= 2 && q.length <= 24) {
+      return { kind: 'meme', query: q, label: `查梗「${q}」`, rawText: t };
+    }
+  }
+
+  // 4. 显式联网查资料 / 事实检索
+  if (/(帮我查一下|帮我搜一下|查一下|搜一下|网上查|网上搜|帮我看看网上|最新消息|什么时候上映|票房多少|是谁演的|哪年上映|多少钱)/.test(t)) {
+    const q = t
+      .replace(/^(?:诶|哎|那个|对了|你)?(?:帮我|去)?(?:网上)?(?:查一下|搜一下|看看)?[，,：:\s]*/g, '')
+      .replace(/[呀啊吗呢？?。！!]+$/g, '')
+      .trim();
+    if (q.length >= 2) {
+      return { kind: 'web_search', query: q, label: `查「${q.slice(0, 14)}」`, rawText: t };
+    }
+  }
+
+  return null;
+}
+
 /**
  * DashScope Paraformer 实时流式语音识别会话（仅在用户开口说话期间建连，静音期 0 费用）
  */
@@ -376,7 +431,13 @@ export class RealtimeCallEngine {
     this.onHangupRequest = opts.onHangupRequest || (() => {});
     this.getContext = opts.getContext || (async () => ({}));
     this.onSummary = opts.onSummary || (async () => {});
+    this.onSidecarTask = typeof opts.onSidecarTask === 'function' ? opts.onSidecarTask : null;
+    this.defaultCity = String(opts.defaultCity || '').trim();
     this.log = opts.log || console.log;
+
+    // 异步旁路工具状态（绝不阻塞主通话延迟）
+    this._pendingSidecarNotes = [];
+    this._sidecarSeq = 0;
 
     // 内部状态
     this.active = false;
@@ -849,17 +910,54 @@ export class RealtimeCallEngine {
     this.transcript.push({ role: 'user', text, ts: Date.now() });
     this._lastActivityAt = Date.now();
 
-    // 构造发给大脑的本轮输入（含打断感知、本地 0ms 梗库命中、60分钟软提醒）
+    // 构造发给大脑的本轮输入（含打断感知、本地 0ms 梗库命中、异步旁路工具、60分钟软提醒）
     const notes = [];
     if (this._lastInterruptedContext) {
       notes.push(this._lastInterruptedContext);
       this._lastInterruptedContext = '';
+    }
+    if (this._pendingSidecarNotes.length) {
+      notes.push(...this._pendingSidecarNotes.splice(0));
     }
     const memeHit = lookupLocalMemeSync(text, this.memeKbPath);
     if (memeHit) {
       const reps = memeHit.replies.length ? memeHit.replies.join(' / ') : memeHit.meaning;
       notes.push(`[本地梗库命中「${memeHit.name}」：接梗下句参考=${reps}（对方是直接抛梗，请直接入戏接梗别科普）]`);
     }
+
+    // 异步旁路工具：180ms 内完成的直接进本轮回答；超过 180ms 先零延迟过渡，查完后自动静默播报
+    const sidecarTask = this.onSidecarTask
+      ? detectSidecarTask(text, { defaultCity: this.defaultCity, localMemeHit: Boolean(memeHit) })
+      : null;
+    if (sidecarTask) {
+      const scSeq = ++this._sidecarSeq;
+      const scStart = Date.now();
+      this.log(`[call-sidecar] 触发异步旁路(${sidecarTask.kind}): ${sidecarTask.query}`);
+      const scPromise = Promise.resolve()
+        .then(() => this.onSidecarTask(sidecarTask))
+        .then((res) => String(res || '').trim())
+        .catch((err) => {
+          this.log(`[call-sidecar] 执行失败(${sidecarTask.kind}): ${err?.message ?? err}`);
+          return '';
+        });
+
+      const fastRes = await Promise.race([
+        scPromise,
+        new Promise((r) => setTimeout(() => r(null), 180))
+      ]);
+      if (fastRes) {
+        this.log(`[call-sidecar] 即时命中 (${Date.now() - scStart}ms): ${fastRes.slice(0, 80)}`);
+        notes.push(`[后台工具已即时完成（${sidecarTask.label}）：${fastRes}（请自然简短地用口语回复结果）]`);
+      } else if (fastRes === null) {
+        notes.push(`[系统提示：后台正在查「${sidecarTask.label}」，1~2 秒就会回来；现在请先极简自然地过渡一句（如「等等啊我瞄一眼手机」），绝对不要自己瞎编结果]`);
+        scPromise.then((lateRes) => {
+          if (!lateRes) return;
+          this.log(`[call-sidecar] 后台返回 (${Date.now() - scStart}ms): ${lateRes.slice(0, 100)}`);
+          this._deliverSidecarResult(sidecarTask, lateRes, scSeq);
+        });
+      }
+    }
+
     const elapsedMin = (Date.now() - this.startedAt) / 60000;
     if (!this._softReminderSent && elapsedMin >= this.softReminderMin) {
       this._softReminderSent = true;
@@ -869,6 +967,27 @@ export class RealtimeCallEngine {
     const promptText = notes.length ? `${notes.join('\n')}\n对方说：${text}` : text;
     this._pendingUserUtterance = text; // 在正式出声前保留，万一思考中被补话可合并
     await this._runAiTurn(promptText, { vadEndAt, asrMs, userUtterance: text });
+  }
+
+  async _deliverSidecarResult(task, resultText, scSeq) {
+    if (!this.active || this._ending || !resultText) return;
+    const note = `[后台刚查到的真实结果（${task.label}）：${resultText}]`;
+    this._pendingSidecarNotes.push(note);
+
+    // 等待当前过渡句讲完且用户没有在开口说话（最多等 6 秒），若空闲则主动顺嘴播报
+    const deadline = Date.now() + 6000;
+    while (this.active && !this._ending && Date.now() < deadline) {
+      if (this._inSpeech || scSeq !== this._sidecarSeq) return; // 用户在说话或已开启新任务，留给下一轮自然带出
+      const idle = !this._aiThinking && this._playQueueBytes <= PCM24K_BYTES_PER_MS * 220;
+      if (idle) break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    if (!this.active || this._ending || this._inSpeech || this._aiThinking || !this._pendingSidecarNotes.length) return;
+    const batch = this._pendingSidecarNotes.splice(0).join('\n');
+    await this._runAiTurn(
+      `${batch}\n[提示：后台结果刚出来，现在自然简短地用一两句大白话把查到的内容告诉对方，不要复读“后台查到”]`,
+      { vadEndAt: Date.now(), asrMs: 0, userUtterance: '' }
+    );
   }
 
   async _runAiTurn(promptText, { isGreeting = false, vadEndAt = Date.now(), asrMs = 0, userUtterance = '' } = {}) {

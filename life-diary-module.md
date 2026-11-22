@@ -1,8 +1,8 @@
 # Life & Diary Module — 让 AI 有「自己的生活」：闲逛输入 + 全景记忆 + 有心情的夜间日记
 
-> **文档定位**：给聊天宠物一个独立于聊天会话的「生活与反思」闭环：白天她自己出去逛（刷 B 站、查热点），晚上把**今天接收到的全部信息**——自主探索、QQ 聊天分幕摘录、实时语音电话、新学的梗、新解锁的能力/成长里程碑、长期记忆和过往说说时间线——全部汇总进来，从「我」的视角写出带真实心情、吐槽与感想的日记，审查后发到 QQ 空间（仅好友可见）。  
-> **解决的问题**：说说只有一句话、冷冰冰的流水账、只写网上查到的东西而忽略当天聊过的天/打过的电话/新解锁的能力、反复使用同一个意象、金句式鸡汤收尾，以及他人隐私或昵称被公开。  
-> **模板文件**：[`templates/life-journal.mjs`](./templates/life-journal.mjs)、[`templates/qq-life.mjs`](./templates/qq-life.mjs)、[`templates/diary-examples.json`](./templates/diary-examples.json)、[`templates/qq-life-tools.mjs`](./templates/qq-life-tools.mjs)，以及 [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) / [`templates/sync-vault.mjs`](./templates/sync-vault.mjs) 中的钩子。
+> **文档定位**：给聊天宠物一套完整的「自主生活 + 睡眠记忆代谢 + 纪念日回忆 + 手绘手账日记」闭环：白天她自己出去逛（B 站、豆瓣书影音、知乎/社区热议、播客与科技奇闻、节气与城市天气），晚上把**今天接收到的全部信息**与**那年/那月今日的回忆杀**汇总进来，用「重吐槽 + 碎碎念」的活人感写出日记，按当天氛围自动画 **1–2 张手绘插画 / 手账配图**发到 QQ 空间（仅好友可见），随后自动执行**睡眠海马体记忆整理**（去重、补日期、代谢归档过期提醒）并归档至私有库。  
+> **解决的问题**：说说只有一句话、冷冰冰的流水账、散文腔/鸡汤味、长期记忆重复与过期乌龙、外界渠道单一、日记缺配图，以及他人隐私或昵称被公开。  
+> **模板文件**：[`templates/life-journal.mjs`](./templates/life-journal.mjs)、[`templates/qq-life.mjs`](./templates/qq-life.mjs)、[`templates/diary-examples.json`](./templates/diary-examples.json)、[`templates/memory-consolidator.mjs`](./templates/memory-consolidator.mjs)、[`templates/weather-solar.mjs`](./templates/weather-solar.mjs)、[`templates/qq-life-tools.mjs`](./templates/qq-life-tools.mjs)，以及 [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) / [`templates/sync-vault.mjs`](./templates/sync-vault.mjs) 中的钩子。
 
 ---
 
@@ -53,25 +53,33 @@ flowchart LR
 - 与聊天共用 B 站日配额文件（`state/bilibili-quota.json`），单次最多调用 8 次工具，超时 6 分钟。
 - 输出严格 JSON：`{"notes":[{kind,title,detail,feeling}], "drawIdea": ""}`；有 `drawIdea` 时按 35% 概率真的画一张，并计入画画日额度。
 
-### 3.3 全景记忆聚合（`buildDiaryContext`）
-写日记前自动汇聚 6 个信息流，统一以 `lifeDayKey`（凌晨 5 点换日）切片：
+### 3.3 全景记忆聚合、节气天气与回忆杀（`buildDiaryContext`）
+写日记前自动汇聚 8 个信息流，统一以 `lifeDayKey`（凌晨 5 点换日）切片：
 
 | 信息流 | 数据来源 | 关键处理 |
 | --- | --- | --- |
-| 一、自主探索 | `state/life-journal.jsonl` | 解析 BV 标题、去重，保留真实标题和当时的感受 |
+| 一、自主探索 | `state/life-journal.jsonl` | 解析 BV 标题、去重，保留真实标题和当时的感受；闲逛渠道涵盖 B 站、豆瓣书影音、知乎/豆瓣社区热议、科技与播客，并支持严格限频（每日 ≤ 1 条、仅白天且 45 分钟未打扰时）的偶尔宝藏主动安利 |
 | 二、成长与新本事 | `state/milestones.json` + `known-capabilities.json` | 对比当前配置/模块自动发现新上线能力并写入里程碑；也支持 `qq-life.mjs milestone` 手动记一笔 |
-| 三、实时语音电话 | `state/call-stats.json` + `social-v2.json` 通话记录 | 汇总当日总通话分钟数与每通电话的摘要，明确区分为「QQ 实时语音电话（非普通语音条）」 |
+| 三、实时语音电话 | `state/call-stats.json` + `social-v2.json` 通话记录 | 汇总当日总通话分钟数与每通摘要，秒数自动换算为「约 N 分钟」，并与普通语音条明确区分 |
 | 四、今日新学的梗 | `state/meme-kb.json` | 按 `learnedAt` 筛出当天冲浪学到和聊天现查的梗（最多 15 个） |
-| 五、今日聊天分幕摘录 | `state/social-v2.json` 全部私聊/群聊 | 动态匿名化所有真实昵称、剥离冗长 `[声音描述]` 与隐私句、按 45 分钟间隔切成多个对话片段，再按片段消息量**余量加权分配摘录预算**，确保下午和凌晨的精彩段落都不会被挤掉 |
-| 六、长期印象与过往说说 | `activeTopics` / 近期印象 + QQ 空间最近 15 条 | 附带 `[MM-DD]` 时间戳，既做防重复参考，也让她在情绪上能自然回望过往成长轨迹 |
+| 五、今日聊天分幕摘录 | `state/social-v2.json` 全部私聊/群聊 | 动态匿名化所有真实昵称、剥离冗长 `[声音描述]` 与隐私句、按 45 分钟切幕并做**余量加权分配摘录预算** |
+| 六、长期印象与过往说说 | `activeTopics` / 近期印象 + QQ 空间最近 30 条 | 附带 `[MM-DD]` 时间戳，既防重复，也让她在情绪上能自然回望成长轨迹 |
+| 七、二十四节气与城市天气 | `weather-solar.mjs` | 零依赖计算精确二十四节气；配置 `life.weatherCity` 后免费查实时/明日中文天气（3 小时缓存），同时同步进 `daily-feed.json` 供聊天与通话感知 |
+| 八、回忆杀与纪念日 | `collectFlashbacks`（里程碑 / 旧日记 / 归档记忆 / 历史说说） | 自动识别 7 天 / 14 天 / 满月（同日隔月）/ 50 天 / 百日 / 半年 / 周年节点，按周年 > 满月 > 一周排序并严格过滤敏感隐私旧帖；同步写入 `daily-feed.json` |
 
-### 3.4 活人感语感锚点 + 重吐槽碎碎念 + 发布前审查（`qq-diary` 零工具预设）
+### 3.4 活人感语感锚点 + 动态手绘手账配图 + 睡眠海马体整理
 - **风格锚点库（`templates/diary-examples.json`）**：内置 6 条完全虚构、跨场景跨篇幅的「重吐槽 + 碎碎念 + 嘴硬心软」风格示例。每次写日记随机抽 1 条中篇 + 1 条短篇放进参考区，只迁移松弛口吻与烟火气节奏，严禁照搬事件。
 - **破除「AI 散文骨相」**：
   - 喂给模型角色卡「你是谁」一节（刻意不带聊天场景「一句话 1~10 字」铁律）；
   - 挑 1–2 件今天最上头的事顺着一个情绪唠透，禁止「三段式平均分配 + 每段结尾硬点题」；
   - 篇幅随当天话瘾自然浮动（80–140 字短吐槽或 160–300 字长碎碎念均可）；
-  - 全面清除素材与正文中的生硬「对方」，改用「他 / 那家伙 / 朋友 / 群里」或省主语，通话时长自动换算为「约 N 分钟」避免播报秒数。
+  - 全面清除素材与正文中的生硬「对方」，改用「他 / 那家伙 / 朋友 / 群里」或省主语。
+- **动态手绘手账配图（`generateDiaryIllustrations`）**：
+  - 写作输出同步规划 `moodStyle` 与 1–2 条 `drawScenes`：吐槽/搞笑/玩梗日自动选便签涂鸦风（`doodle`），日常/逛世界/走心日选日式水彩彩铅手账风（`journal`，需在生图服务 `DRAW_STYLES` 注册）或 `watercolor`/`pencil`；
+  - 画面自动锚定小鲸鲸 Q 版/手账角色并禁止生成乱码文字，发至 QQ 空间（支持多图）并归档进私有库 `DIARY.md` 图文手账。
+- **睡眠海马体记忆整理（`templates/memory-consolidator.mjs`）**：
+  - 挂在 `qq-diary.service` 的 `ExecStartPost` 中，每晚写完日记自动执行（零常驻内存）：去重合并碎片印象、强制将「昨天/明天/快到了」改写为带具体日期 `[YYYY-MM-DD]` 的时间锚点、将过期临时提醒移出活跃区并归档至 `state/memory-archive.jsonl`（永不丢失，同时反哺回忆杀引擎）；
+  - 优先通过 `POST /api/socialV2/consolidate` 热更新运行中的 `qq-bridge` 内存态再落盘，杜绝文件覆盖竞态。
 - 发布前代码侧强制审查（不通过时带问题清单打回重写 1 次，仍不通过当天不发）：
 
 | 检查项 | 规则 |
@@ -97,11 +105,13 @@ flowchart LR
 
 ## 5. 常用命令与验收
 ```bash
-node src/qq-life.mjs explore                        # 闲逛：记下 1~4 条带真实标题和感受的见闻
-node src/qq-life.mjs milestone "新本事" "具体说明"   # 手动记录一条成长/能力里程碑
-node src/qq-life.mjs preview-context [--day=YYYY-MM-DD]
-node src/qq-life.mjs diary --dry-run [--day=YYYY-MM-DD]
-node src/qq-life.mjs diary --force                  # 手动强制发布一条（忽略当日上限）
+node src/qq-life.mjs explore                                   # 闲逛：多渠道探索 + 偶尔主动安利
+node src/qq-life.mjs milestone "新本事" "具体说明"              # 手动记录成长/能力里程碑
+node src/qq-life.mjs preview-context [--day=YYYY-MM-DD]        # 预览 8 路全景素材与脱敏结果
+node src/qq-life.mjs flashbacks [--day=YYYY-MM-DD]             # 测试指定日期触发的回忆杀/纪念日
+node src/qq-life.mjs diary --dry-run [--with-draw] [--day=...] # 试写日记（加 --with-draw 实测手绘插画）
+node src/qq-life.mjs diary --force                             # 手动强制发布一条（忽略当日上限）
+node src/memory-consolidator.mjs [--dry-run] [--force]         # 睡眠海马体记忆整理（去重/日期锚定/过期归档）
 systemctl list-timers qq-life-explore.timer qq-diary.timer
 ```
 

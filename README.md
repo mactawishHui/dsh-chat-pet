@@ -19,8 +19,8 @@
 | **彻底去人机味 & 弹性长度** | 「好的我记下了」「虽然…但是…」「最戳我的是…」、每轮卡死 1–2 行 | 拆掉 `coding agent` 开头与消息流 `管理员` 标签、保留长期记忆前提下切断陈年 AI 腔回音壁、放宽预设字数/连发门槛 |
 | **可选「脑嘴分离」层** | 换其他高助手腔模型时独立做熟人口语转译 | [`templates/mouth.mjs`](./templates/mouth.mjs) + [`templates/mouth-examples.json`](./templates/mouth-examples.json)（支持 DashScope / OpenAI 兼容 / Gemini 4 Hydrogen，默认可开关、超时自动回退） |
 | **独立「玩梗与接梗」模块** | AI 只会当百科科普、听不懂空耳黑话、认不出无字人脸梗图、定时抓老梗/小众梗 | **[`meme-engine-module.md`](./meme-engine-module.md)** + [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) + [`templates/reverse-image.mjs`](./templates/reverse-image.mjs)：4 层查梗（含 B 站+Serper 并发交叉佐证）+ Google Lens 以图搜图 + `replies`/`playTip` 接梗不科普 + **3 档破圈热度×生命力定时扩库** + MemeCub 自动配图（0 常驻内存、平台解耦） |
-| **独立「实时语音通话」模块** | 机器人只能发离线语音条、端到端模型丢原声、打断重音、通话与聊天记忆割裂 | **[`realtime-call-module.md`](./realtime-call-module.md)** + [`templates/call-engine.mjs`](./templates/call-engine.mjs) + [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs)：PulseAudio 双声卡物理零回声原生 QQ 接通 + 双层好友白名单 + 零工具轻量大脑 + 原声整句 SSE 拟人合成 + **80ms 预充 1x 节拍器**瞬时打断零重叠 + 聊天/通话双向记忆互通（仅 ~67 MB 内存） |
-| **独立「自己的生活」与全景日记** | 说说只有一句话、冷冰冰流水账、散文腔/鸡汤味、反复用同一意象、忽略聊天/通话/新解锁本事 | **[`life-diary-module.md`](./life-diary-module.md)** + [`templates/qq-life.mjs`](./templates/qq-life.mjs) + [`templates/diary-examples.json`](./templates/diary-examples.json) + [`templates/life-journal.mjs`](./templates/life-journal.mjs)：每日 2 次独立闲逛刷 B 站/热搜 + 6 路全景记忆聚合（探索/新本事里程碑/实时通话/新梗/脱敏聊天分幕摘录/过往说说时间线）+ 重吐槽碎碎念风格锚点库 + 仅好友可见每天最多 1 条 + 隐私与去 AI 味强制审查（0 常驻内存） |
+| **独立「实时语音通话」模块** | 机器人只能发离线语音条、端到端模型丢原声、打断重音、通话零工具无法查资料/记事 | **[`realtime-call-module.md`](./realtime-call-module.md)** + [`templates/call-engine.mjs`](./templates/call-engine.mjs) + [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs)：PulseAudio 双声卡物理零回声原生 QQ 接通 + 双层好友白名单 + 零工具轻量大脑 + **异步旁路工具**（180ms 快慢通道查天气/查梗/联网搜/记备忘，不降主通话速）+ 原声整句 SSE 拟人合成 + **80ms 预充 1x 节拍器**瞬时打断零重叠 + 聊天/通话双向记忆互通（仅 ~67 MB 内存） |
+| **独立「自己的生活」与全景手账日记** | 说说只有一句话、冷冰冰流水账、记忆重复与过期乌龙、散文腔/鸡汤味、缺手绘插画与节气回忆 | **[`life-diary-module.md`](./life-diary-module.md)** + [`templates/qq-life.mjs`](./templates/qq-life.mjs) + [`templates/memory-consolidator.mjs`](./templates/memory-consolidator.mjs) + [`templates/weather-solar.mjs`](./templates/weather-solar.mjs) + [`templates/diary-examples.json`](./templates/diary-examples.json)：每日 2 次多渠道闲逛（B站/豆瓣/社区热议/播客/节气天气 + 限频宝藏安利）+ 8 路全景记忆与回忆杀纪念日引擎 + 重吐槽碎碎念风格锚点 + **动态手绘手账配图**（按氛围自动切涂鸦/水彩手账风 1–2 张）+ **夜间睡眠海马体记忆整理**（去重/日期锚定/过期归档，0 常驻内存） |
 | **私有资产库自动云端备份** | 梗库、梗图、记忆、日记、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` / `DIARY.md` 与 `memory/milestones.json` |
 
 ---
@@ -35,7 +35,9 @@
 ├── realtime-call-module.md       # 独立可解耦「实时语音通话」模块架构与新环境接入指南（平台无关）
 ├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 6 路全景记忆 + 重吐槽碎碎念夜间日记
 └── templates/
-    ├── qq-life.mjs               # 闲逛时间 + 6 路全景记忆聚合 + 成长里程碑 + 夜间日记审查发布
+    ├── qq-life.mjs               # 多渠道闲逛 + 8 路全景记忆/回忆杀 + 动态手绘手账日记审查发布
+    ├── memory-consolidator.mjs   # 睡眠海马体记忆整理（去重合并、日期锚定、过期代谢归档，热写回桥接）
+    ├── weather-solar.mjs         # 二十四节气精确计算 + 免 Key 中文城市天气（双源回退 + 3h 缓存）
     ├── diary-examples.json       # 重吐槽 / 碎碎念 / 嘴硬心软活人感日记风格锚点库
     ├── life-journal.mjs          # 见闻流水账（JSONL，凌晨 5 点换日，保留 14 天）
     ├── qq-life-tools.mjs         # 闲逛会话工具边界（只读 B 站 / 安全搜索 + 共用日配额）

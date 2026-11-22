@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { serperGoogleSearch } from './reverse-image.mjs';
 import { appendJournal } from './life-journal.mjs';
+import { getWeatherAndSolarHint } from './weather-solar.mjs';
 
 function journalMeme(entry, how) {
   appendJournal({
@@ -737,15 +738,57 @@ function makeMemeId(name) {
 }
 
 // ── 4. 核心入口：每日定时冲浪 + 萌娘学梗 + 自动配梗图 ─────────────────────────
+async function fetchCommunityDiscussions() {
+  const out = [];
+  // 1) 知乎/豆瓣近期高赞生活与影视讨论（复用 Serper，零新增 Key）
+  const queries = [
+    { source: '社区热议', q: '(site:zhihu.com/question OR site:douban.com/group) (有趣 OR 离谱 OR 推荐 OR 值得看)', tbs: 'qdr:w' },
+    { source: '科技与播客', q: '(播客 OR 冷知识 OR 科技趣闻 OR 新番 OR 独立游戏) 推荐 OR 评测', tbs: 'qdr:w' }
+  ];
+  for (const item of queries) {
+    try {
+      const hits = await serperGoogleSearch(item.q, { num: 6, tbs: item.tbs });
+      for (const h of hits) {
+        const title = String(h.title || '').replace(/\s*[-_|–—].*$/, '').trim();
+        if (!title || title.length < 5) continue;
+        out.push({
+          source: item.source,
+          title: title.slice(0, 40),
+          extra: String(h.snippet || '').replace(/\s+/g, ' ').trim().slice(0, 75),
+          url: h.url || ''
+        });
+      }
+    } catch {}
+  }
+  return out.slice(0, 10);
+}
+
+function readWeatherCity() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+    return String(cfg?.life?.weatherCity || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) {
-  log('[surf] 开始刷今日热点与近期爆火新梗…');
-  const [bili, douban, toutiao] = await Promise.all([
+  log('[surf] 开始刷今日热点、多渠道见闻与近期爆火新梗…');
+  const weatherCity = readWeatherCity();
+  const [bili, douban, toutiao, community, weatherSolar] = await Promise.all([
     fetchBilibiliPopular(),
     fetchDoubanHotMovies(),
-    fetchToutiaoHot()
+    fetchToutiaoHot(),
+    fetchCommunityDiscussions(),
+    getWeatherAndSolarHint(weatherCity).catch(() => null)
   ]);
-  const rawHot = [...douban.slice(0, 8), ...bili.slice(0, 10), ...toutiao.slice(0, 10)];
-  log(`[surf] 抓到原始热点：豆瓣电影 ${douban.length}、B站 ${bili.length}、头条 ${toutiao.length}`);
+  const rawHot = [
+    ...douban.slice(0, 8),
+    ...bili.slice(0, 10),
+    ...toutiao.slice(0, 8),
+    ...community.slice(0, 8)
+  ];
+  log(`[surf] 抓到原始热点：豆瓣电影 ${douban.length}、B站 ${bili.length}、头条 ${toutiao.length}、社区/科技播客 ${community.length}${weatherSolar?.line ? '｜' + weatherSolar.line : ''}`);
 
   let curatedItems = [];
   if (rawHot.length) {
@@ -832,10 +875,14 @@ export async function runDailySurf({ maxNewMemes = 5, log = console.log } = {}) 
   }
   if (newlyLearned.length) saveMemeKb(kb);
 
+  const prevFeed = readDailyFeed();
   const feed = {
     updatedAt: new Date().toISOString(),
     day: new Date().toISOString().slice(0, 10),
+    weatherSolar: weatherSolar || prevFeed.weatherSolar || null,
+    flashbacks: prevFeed.day === new Date().toISOString().slice(0, 10) ? (prevFeed.flashbacks || []) : [],
     hotItems: curatedItems,
+    communityItems: community.slice(0, 6),
     recentMemes: kb.memes.slice(-8).reverse().map((m) => ({
       id: m.id,
       name: m.name,
@@ -871,10 +918,22 @@ export function formatDailyFeedHint() {
   const feed = readDailyFeed();
   const hots = (feed.hotItems || []).slice(0, 6);
   const memes = (feed.recentMemes || []).slice(0, 4);
-  if (!hots.length && !memes.length) return '';
-  const lines = ['【你今天刷手机随手看到的（聊天有契机再自然提，绝不要像新闻播报）】'];
-  for (const h of hots) {
-    lines.push(`- [${h.tag || h.source}] ${h.title}：${h.gist}`);
+  const wsLine = feed.weatherSolar?.line || '';
+  const flashbacks = Array.isArray(feed.flashbacks) ? feed.flashbacks.slice(0, 2) : [];
+  if (!hots.length && !memes.length && !wsLine && !flashbacks.length) return '';
+  const lines = [];
+  if (wsLine) {
+    lines.push(`【今日节气与天气（自然感知即可，别硬播报）】\n- ${wsLine}`);
+  }
+  if (flashbacks.length) {
+    lines.push('【今日回忆小提醒（有契机再顺口提一句，没感觉完全忽略）】');
+    for (const fb of flashbacks) lines.push(`- ${fb}`);
+  }
+  if (hots.length) {
+    lines.push('【你今天刷手机随手看到的（聊天有契机再自然提，绝不要像新闻播报）】');
+    for (const h of hots) {
+      lines.push(`- [${h.tag || h.source}] ${h.title}：${h.gist}`);
+    }
   }
   if (memes.length) {
     lines.push('【最近新学的梗（对方抛梗直接接下句或发对应梗图，别当百科老师科普出处）】');

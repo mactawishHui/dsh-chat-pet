@@ -139,14 +139,18 @@ function buildDiaryMarkdown(entries) {
   ];
   if (!entries.length) lines.push('还没有日记。');
   for (const e of [...entries].reverse()) {
-    lines.push(`## ${e.day}`);
+    lines.push(`## ${e.day}${e.moodStyle ? ` · \`${e.moodStyle}\`` : ''}`);
     lines.push('');
     lines.push(String(e.content || '').trim());
     lines.push('');
-    if (e.image) {
-      const f = path.basename(e.image);
-      const dir = e.image.includes('/memes/') ? 'memes' : 'drawings';
-      lines.push(`<img src="${dir}/${f}" alt="${f}" width="320" />`);
+    const imgs = Array.isArray(e.images) && e.images.length ? e.images : (e.image ? [e.image] : []);
+    if (imgs.length) {
+      const tags = imgs.map((im) => {
+        const f = path.basename(im);
+        const dir = im.includes('/memes/') ? 'memes' : 'drawings';
+        return `<img src="${dir}/${f}" alt="${f}" width="320" />`;
+      });
+      lines.push(tags.join(' '));
       lines.push('');
     }
   }
@@ -228,6 +232,10 @@ async function main() {
   writeFile(path.join(VAULT_DIR, 'memory', 'life-journal.jsonl'), journal.map((r) => JSON.stringify(r)).join('\n') + (journal.length ? '\n' : ''));
   const milestones = readJson(path.join(BRIDGE_ROOT, 'state', 'milestones.json'), null);
   if (milestones) writeFile(path.join(VAULT_DIR, 'memory', 'milestones.json'), JSON.stringify(milestones, null, 2) + '\n');
+  const memArchive = readJsonl(path.join(BRIDGE_ROOT, 'state', 'memory-archive.jsonl'));
+  if (memArchive.length) {
+    writeFile(path.join(VAULT_DIR, 'memory', 'memory-archive.jsonl'), memArchive.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  }
   writeFile(path.join(VAULT_DIR, 'README.md'), buildReadme({ kb: kbPortable, feed, stickers, slang, memeFiles, drawFiles, diaryCount: diaries.length }));
 
   await git(['add', '-A']);

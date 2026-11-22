@@ -112,7 +112,18 @@ await engine.stop('remote_hangup');
 1. **Layer-1 接听前校验**：检测 `360x640` 来电窗口 → 点击无害的 `异常提示/我知道了` 按钮露出来电人卡片 → 截取 `360x640` 画面经轻量视觉模型校验 `isIncoming === true`、`isGroupCall === false` 且 `callerName` 匹配白名单好友（由 OneBot `get_friend_list` 动态解析昵称与备注，过滤 `私聊/管理员` 等占位词）→ 命中后随机延迟 `1.5–2.8s`（模拟真人接听节奏）点击接听，未命中直接拒接；
 2. **Layer-2 接听后防伪复核**：接听 3 秒后复核底层信令日志 `from=<UIN> msgType=529/11`，若真实数字 QQ 号不在白名单内则瞬间挂断。
 
-### 3.4 同步美化普通 QQ 语音条（`qq-tts`）
+### 3.4 异步旁路工具（零降速获得查天气 / 查梗 / 联网搜索 / 记备忘）
+为了保住 ~1.4s 极速通话响应，主对话大脑继续保持零工具（`qq-call`），同时在 `call-engine.mjs` 内嵌了一层 **< 0.2ms 的极速旁路意图检测（`detectSidecarTask`）** 与异步调度器：
+- **支持的 4 类通话旁路工具**（通过宿主回调 `onSidecarTask` 注入，保持引擎平台无关）：
+  1. **记备忘（`remember`）**：识别「帮我记一下 / 别忘了提醒我…」，毫秒级调用 `POST /api/call/note` 写入 `social-v2.json` 活跃话题与 `life-journal.jsonl`；
+  2. **查天气（`weather`）**：提取通话提到的城市或回退默认城市，调用免 Key 天气模块（`wttr.in` + `Open-Meteo` 中文回退，3 小时缓存）；
+  3. **实时查梗（`meme`）**：本地 0ms 梗库未命中且用户追问「啥梗/什么意思」时，后台异步走 `lookupMeme`；
+  4. **联网搜索（`web_search`）**：识别「帮我查一下 / 什么时候上映 / 最新消息」等显式查询，后台走 Serper 搜索摘要。
+- **180ms 快慢双通道，绝不卡主对话**：
+  - ≤ 180ms 完成的（如本地记备忘、已缓存天气）直接注入**当前回合**，一步到位回答；
+  - 超过 180ms 的（如联网检索、实时天气）先让主线程零延迟自然过渡一句（「等等啊我瞄一眼手机」），1–2 秒结果返回后若用户未抢话，自动静默触发一轮口语播报（「诶查到了，明天北京晴 0 到 7 度…」）；若用户已在说新话题，则不打断、并入下一轮自然带出。
+
+### 3.5 同步美化普通 QQ 语音条（`qq-tts`）
 将同样的拟人化风格指令写入 `/opt/qq-tts/config.json` 的 `dashscope.instruction`，并在 `cleanForApi` 中自动剔除 `（笑）` 等括号舞台动作描写、在 `qq_send_voice_text` 描述中引导 1–2 句松弛口语、拒绝句首堆叠语气词，即可让文字聊天里发的语音条与实时通话保持一致的真人质感。
 
 ---
@@ -130,10 +141,11 @@ await engine.stop('remote_hangup');
 2. 创建 `dsh/agent-presets/qq-call/{preset.yml,agent.cordis.yml}`，设定口语通话铁律（1–2 句短话、严禁 Markdown/括号动作、严禁句首堆砌语气词、核对当前日期、告别输出 `[HANGUP]`）；
 3. 注册进 `build-agent-preset-patches.mjs` 与 `plugins/qq-agent-presets/package.json`，生成并校验 `qq-call.patch.yml`，重启 `dsh-web`。
 
-### Step 3：接入记忆双向端点（宿主 Bridge）
-在宿主服务上暴露 2 个仅监听 `127.0.0.1` 的鉴权接口：
+### Step 3：接入记忆与旁路端点（宿主 Bridge）
+在宿主服务上暴露 3 个仅监听 `127.0.0.1` 的鉴权接口：
 - `GET /api/call/context?qq=<ID>`：返回 `{ impression, recentMessages, dailyFeedText }`；
-- `POST /api/call/summary`：接收 `{ callerId, callerName, durationSec, summary, facts }`，写入长期印象与最近会话记录并落盘。
+- `POST /api/call/summary`：接收 `{ callerId, callerName, durationSec, summary, facts }`，写入长期印象与最近会话记录（含 `time` + `at` 双时间戳）并落盘；
+- `POST /api/call/note`：接收通话异步旁路写入的 `{ callerId, callerName, text }` 备忘提醒，实时更新活跃话题并落盘。
 
 ### Step 4：落盘模块并配置白名单与守护服务
 1. 复制 [`templates/call-engine.mjs`](./templates/call-engine.mjs) 与 [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs) 到宿主 `src/` 目录（确保 `ws` 依赖可解析）；

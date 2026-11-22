@@ -109,8 +109,8 @@ await engine.stop('remote_hangup');
 | **本地 VAD + 断句** | 20ms RMS 动态底噪跟踪 + 300ms 预录防吞字；完结句 `640ms` 断句，仅对真正未完连接词（`然后/但是/那个/嗯`）或 ≤ 3 字延长至 `1240ms`；思考期补话自动取消旧生成并合并两半句 | 0ms（本地） |
 | **流式 ASR** | DashScope `paraformer-realtime-v2` 双工 WebSocket，**仅在用户开口期间建连推流**（静音期 0 费用），说完即发 `finish-task` | **20–250ms** |
 | **零工具轻量大脑** | 为通话新建独立 **零工具 DSH 预设 `qq-call`**（`ctx.tools.restrict({ allow: [] })`），复用现有 `deepseek-flash`（`reasoningEffort: "off"`，零新增 API Key），开场注入当前精确北京时间与记忆快照，每轮 0ms 匹配本地梗库 | **500–1100ms** |
-| **整句 SSE 流式 TTS** | `qwen-audio-3.1-tts-flash`（`X-DashScope-SSE: enable`, `format: "pcm"`, `sample_rate: 24000`），按完整句子送合成（不在每个逗号处切碎，保证整句自然语调），配合拟人化 `instruction` 控制稍慢语速、生活气和轻声气口 | **首包 260–310ms** |
-| **1x 节拍播放与打断** | `performance.now()` 漂移补偿节拍器（10ms 调度）+ **80ms 预充水库** + 偶数字节对齐 + 首尾 5ms 淡入淡出；全程单例 `pacat --latency-msec=100`，打断 0ms 清空队列，绝无杂音与双声轨重叠 | **打断 < 100ms** |
+| **整句 SSE 流式 TTS** | `qwen-audio-3.1-tts-flash`（`X-DashScope-SSE: enable`, `format: "pcm"`, `sample_rate: 24000`），按完整句子送合成（不在每个逗号处切碎，保证整句自然语调），自动剥离括号舞台动作与偶发裸 `<toolcall>` 标签，配合拟人化 `instruction` 控制稍慢语速、生活气和轻声气口 | **首包 260–310ms** |
+| **1x 节拍播放与打断** | `performance.now()` 漂移补偿节拍器（10ms 调度）+ **`180ms` 水库预充与 `_ttsStreaming` 门控** + 偶数字节对齐 + 首尾 5ms 淡入淡出；宿主机侧对 PulseAudio / AudioService `renice -n -10`；全程单例 `pacat --latency-msec=100`，打断 0ms 清空队列，道别挂断倒计时遇继续说话自动取消且防片名/热梗误触 | **打断 < 100ms** |
 
 ### 3.3 双层好友白名单机制（严防陌生人与群通话）
 1. **Layer-1 接听前校验**：检测 `360x640` 来电窗口 → 点击无害的 `异常提示/我知道了` 按钮露出来电人卡片 → 截取 `360x640` 画面经轻量视觉模型校验 `isIncoming === true`、`isGroupCall === false` 且 `callerName` 匹配白名单好友（由 OneBot `get_friend_list` 动态解析昵称与备注，过滤 `私聊/管理员` 等占位词）→ 命中后随机延迟 `1.5–2.8s`（模拟真人接听节奏）点击接听，未命中直接拒接；

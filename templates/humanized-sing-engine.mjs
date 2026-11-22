@@ -243,13 +243,15 @@ export async function searchAndDownloadBilibiliSong({ song, artist = '', destPat
   const cookie = setCookies.map((c) => c.split(';')[0]).filter(Boolean).join('; ');
   const H = { 'user-agent': BILI_UA, referer: 'https://www.bilibili.com/', cookie };
 
-  // 2. 检索原唱（优先官方 MV / 无损）
+  // 2. 检索原唱（优先官方 MV / 无损，带干净兜底词防止多词过严漏掉歌曲）
   const queries = cleanArtist
-    ? [`${cleanArtist} ${cleanSong} 官方MV 无损`, `${cleanArtist} ${cleanSong} 原唱`]
-    : [`${cleanSong} 官方MV 原唱 无损`, `${cleanSong} 原唱`];
+    ? [`${cleanArtist} ${cleanSong} 官方MV 无损`, `${cleanArtist} ${cleanSong} 原唱`, `${cleanArtist} ${cleanSong}`]
+    : [`${cleanSong} 官方MV 原唱 无损`, `${cleanSong} 原唱 完整版`, `${cleanSong} MV`];
 
-  const badRe = /翻唱|cover|男声版|女声版|伴奏|纯音乐|练唱|教程|吉他谱|翻弹|串烧|合集|歌单|reaction|解析|教学|ai翻唱|dj版|变速|升调|降调|0\.8x|1\.2x|群星|合唱版|钢琴版|唢呐|二胡|古筝版/i;
-  const goodRe = /官方mv|官方版|原唱|hi-?res|无损|4k|唱片|太合|索尼|环球|华纳|杰威尔|滚石|滚石唱片|福茂|英皇|相信音乐/i;
+  // 严防外放录屏音箱试听（满屏房间大混响）、AMV 混剪、翻唱、多人大合唱
+  const badRe = /翻唱|cover|男声版|女声版|伴奏|纯音乐|练唱|教程|吉他谱|翻弹|串烧|合集|歌单|reaction|解析|教学|ai翻唱|dj版|变速|升调|降调|0\.8x|1\.2x|群星|合唱版|大合唱|男女对唱|对唱|多人|声乐团|钢琴版|唢呐|二胡|古筝版|录音棚大声听|百万豪装|音响试听|音箱试听|耳机试听|车载音响|沉浸式试听|此时此刻|amv|mad|混剪|踩点|高燃|剪辑|鬼畜|日文版|日语版|韩文版/i;
+  const badAuthorsRe = /jlrs-?leofm/i;
+  const goodRe = /官方mv|官方版|原唱|hi-?res|无损|flac|4k|唱片|太合|索尼|环球|华纳|杰威尔|滚石|福茂|英皇|相信音乐|放映员|完整版|单曲|歌词/i;
   const userWantedBad = badRe.test(`${cleanSong} ${cleanArtist}`);
 
   let candidates = [];
@@ -270,15 +272,19 @@ export async function searchAndDownloadBilibiliSong({ song, artist = '', destPat
       if (!songTokens.every((tok) => lowTitle.includes(tok))) continue;
 
       let score = Math.log10(Math.max(10, Number(item.play) || 10)) * 2.0;
-      if (cleanArtist && (title.includes(cleanArtist) || author.includes(cleanArtist))) score += 8;
+      if (cleanArtist && (title.includes(cleanArtist) || author.includes(cleanArtist))) score += 9;
       if (goodRe.test(title) || goodRe.test(author)) score += 6;
+      if (/无损|hi-?res|flac|16\/44|完整版|单曲|歌词|中文字幕/i.test(title)) score += 4;
       if (/官方mv|官方版/i.test(title)) score += 4;
-      if (!userWantedBad && badRe.test(title)) score -= 25;
-      if (/live|现场|演唱会/i.test(title) && !/live|现场/i.test(cleanSong)) score -= 5;
+      // 影视片段 MV（如「【电影名】MV」）常在前奏/间奏穿插电影人物对白，权重略低于纯音频无损源
+      if (/^【[^】]{2,12}】\s*mv|电影mv|剧情版|影视mv/i.test(title)) score -= 5;
+      if (/[-—《》]/.test(title)) score += 2; // 规范歌曲标题格式（歌手-歌名 / 《歌名》）
+      if (!userWantedBad && (badRe.test(title) || badAuthorsRe.test(author))) score -= 32;
+      if (/live|现场|演唱会|音乐节/i.test(title) && !/live|现场/i.test(cleanSong)) score -= 6;
 
       candidates.push({ bvid, title, author, dur, play: Number(item.play) || 0, score });
     }
-    if (candidates.some((c) => c.score >= 12)) break;
+    if (candidates.some((c) => c.score >= 15)) break;
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -393,43 +399,35 @@ async function transcribeTimestamps(audioPath, maxSec = 105) {
   }
 }
 
-async function locateSongWindow(audioPath, { start = null, seconds = 45, log = console.error } = {}) {
+async function locateSongWindow(audioPath, { start = null, seconds = 44, coarse = true, log = console.error } = {}) {
   const totalDur = await probeDuration(audioPath);
-  const targetSec = Math.min(48, Math.max(20, Number(seconds) || 45));
+  const targetSec = Math.min(46, Math.max(20, Number(seconds) || 44));
   if (start !== null && start !== undefined && Number.isFinite(Number(start)) && Number(start) >= 0) {
     const s = Number(start);
     const dur = totalDur > 0 ? Math.min(targetSec, Math.max(10, totalDur - s)) : targetSec;
-    return { start: s, duration: dur, reason: 'explicit' };
+    return { start: s, duration: dur, reason: 'explicit', exactTrim: false };
   }
   if (totalDur > 0 && totalDur <= targetSec + 4) {
-    return { start: 0, duration: totalDur, reason: 'short-source' };
+    return { start: 0, duration: totalDur, reason: 'short-source', exactTrim: false };
   }
 
-  const sentences = await transcribeTimestamps(audioPath, Math.min(110, Math.ceil(totalDur || 110)));
-  if (sentences.length >= 2) {
-    // 从第一句有效唱词前 0.9s 起刀，把结束点吸附到目标时长附近最干净的一句结尾后 +1.3s（绝不半句截断）
-    const first = sentences.find((s) => s.end - s.begin >= 0.8 && s.text.length >= 3) || sentences[0];
-    const winStart = Math.max(0, first.begin - 0.9);
-    const idealEnd = winStart + targetSec;
-    let bestEnd = idealEnd;
-    let bestDiff = 999;
-    for (const s of sentences) {
-      if (s.end < winStart + 28 || s.end > winStart + 47.5) continue;
-      const diff = Math.abs(s.end - (idealEnd - 1.2));
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestEnd = s.end + 1.25;
-      }
-    }
-    const dur = Math.min(48.5, Math.max(25, bestEnd - winStart));
-    log(`[sing-engine] Paraformer 歌词打点命中 ${sentences.length} 句 -> 截取 ${winStart.toFixed(1)}s ~ ${(winStart + dur).toFixed(1)}s (${dur.toFixed(1)}s)`);
-    return { start: winStart, duration: dur, reason: 'paraformer' };
+  // 两阶段锁句裁剪·阶段 A：先切出宽裕 62s 粗窗口（首句前足足倒退 3.2s，绝不吞掉轻声民谣的开头 1~2 字！），
+  // 待 Demucs 剥离纯净人声轨后，再由 vocal-humanizer.py --stage find_window 按真实静音缝做 10ms 级精确锁句！
+  const coarseDur = coarse ? 62 : targetSec;
+  const sentences = await transcribeTimestamps(audioPath, Math.min(120, Math.ceil(totalDur || 120)));
+  if (sentences.length >= 1) {
+    const first = sentences.find((s) => s.end - s.begin >= 0.7 && s.text.length >= 2) || sentences[0];
+    const winStart = Math.max(0, first.begin - (coarse ? 3.2 : 1.2));
+    const maxAvail = totalDur > 0 ? Math.max(20, totalDur - winStart) : coarseDur;
+    const dur = Math.min(coarseDur, maxAvail);
+    log(`[sing-engine] Paraformer 粗定位命中 ${sentences.length} 句 -> 粗切 ${winStart.toFixed(1)}s ~ ${(winStart + dur).toFixed(1)}s (${dur.toFixed(1)}s，后续按纯净人声轨精确锁句)`);
+    return { start: winStart, duration: dur, reason: 'paraformer-coarse', exactTrim: coarse };
   }
 
-  const fallbackStart = totalDur > 75 ? 16 : 0;
-  const fallbackDur = totalDur > 0 ? Math.min(targetSec, Math.max(15, totalDur - fallbackStart)) : targetSec;
-  log(`[sing-engine] 歌词打点未命中，回退截取 ${fallbackStart}s ~ ${(fallbackStart + fallbackDur).toFixed(1)}s`);
-  return { start: fallbackStart, duration: fallbackDur, reason: 'fallback' };
+  const fallbackStart = totalDur > 85 ? 14 : 0;
+  const fallbackDur = totalDur > 0 ? Math.min(coarseDur, Math.max(20, totalDur - fallbackStart)) : coarseDur;
+  log(`[sing-engine] 歌词打点未命中，粗切 ${fallbackStart}s ~ ${(fallbackStart + fallbackDur).toFixed(1)}s`);
+  return { start: fallbackStart, duration: fallbackDur, reason: 'fallback-coarse', exactTrim: coarse };
 }
 
 // ── 同声纹口白生成（自然随机池，避免每次一模一样） ───────────────────────────
@@ -508,6 +506,8 @@ async function runHumanizedVocalPipeline({
   songTitle = '',
   isOriginal = false,
   framing = true,
+  exactPhraseTrim = false,
+  targetSongSec = 41,
   introText,
   outroText,
   pitchOverride = null,
@@ -528,14 +528,43 @@ async function runHumanizedVocalPipeline({
   }, 'Demucs(htdemucs_ft)');
 
   if (!stems?.vocals) throw new Error('Demucs 未产出人声轨');
-  const vocalRaw = path.join(workDir, 'vocals.wav');
-  const instRaw = path.join(workDir, 'other.wav');
+  let vocalRaw = path.join(workDir, 'vocals.wav');
+  let instRaw = path.join(workDir, 'other.wav');
   await Promise.all([
     downloadFile(stems.vocals, vocalRaw),
     stems.other ? downloadFile(stems.other, instRaw) : Promise.resolve(),
   ]);
 
-  // 2. Praat F0 基频测算 + 自动八度对齐定调（女声 0 / 男声 +12，伴奏零失真！）
+  // 1.5 两阶段锁句裁剪·阶段 B：在 Demucs 纯净人声轨上做 10ms 级完整乐句起止锁定（绝不半句开唱或漏唱下句两字！）
+  if (exactPhraseTrim) {
+    try {
+      const maxDur = Math.min(44.5, Math.max(32, Number(targetSongSec) + 3.5));
+      const { stdout } = await execAsync(CONFIG.humanizerPy, [
+        CONFIG.humanizerScript,
+        '--stage', 'find_window',
+        '--vocal', vocalRaw,
+        '--min-dur', '20.5',
+        '--target-dur', String(Math.min(41, Math.max(26, Number(targetSongSec) || 40))),
+        '--max-dur', String(maxDur),
+      ], { timeout: 60000 });
+      const win = JSON.parse(stdout.trim().split('\n').at(-1) || '{}');
+      if (Number.isFinite(win.start) && Number.isFinite(win.dur) && win.dur >= 14) {
+        const vTrim = path.join(workDir, 'vocals-locked.wav');
+        const iTrim = path.join(workDir, 'other-locked.wav');
+        await ff(['-ss', String(win.start.toFixed(3)), '-i', vocalRaw, '-t', String(win.dur.toFixed(3)), '-c:a', 'pcm_s16le', vTrim]);
+        if (fs.existsSync(instRaw)) {
+          await ff(['-ss', String(win.start.toFixed(3)), '-i', instRaw, '-t', String(win.dur.toFixed(3)), '-c:a', 'pcm_s16le', iTrim]);
+          instRaw = iTrim;
+        }
+        vocalRaw = vTrim;
+        log(`[sing-engine] ✂️ 纯净人声精准锁句: ${win.start.toFixed(2)}s ~ ${win.end.toFixed(2)}s (${win.dur.toFixed(1)}s, ${win.phrases}/${win.total_phrases}句, HNR=${win.avg_hnr}dB)`);
+      }
+    } catch (e) {
+      log(`[sing-engine] 精准锁句跳过(${e.message})，沿用粗切窗`);
+    }
+  }
+
+  // 2. Praat F0 基频测算 + 自动八度对齐定调（常规 172~440Hz 原调 0 / 低沉男声 <172Hz 升 +12，伴奏零失真！）
   let pitchChange = 0;
   let f0Info = { median_hz: 0, suggested_pitch_shift: 0 };
   if (pitchOverride !== null && pitchOverride !== undefined && Number.isFinite(Number(pitchOverride))) {
@@ -549,9 +578,9 @@ async function runHumanizedVocalPipeline({
       pitchChange = Number(f0Info.suggested_pitch_shift) || 0;
     } catch {}
   }
-  log(`[sing-engine] 原唱基频中位数=${f0Info.median_hz || '?'}Hz -> pitch_change=${pitchChange}`);
+  log(`[sing-engine] 原唱基频中位数=${f0Info.median_hz || '?'}Hz (p90=${f0Info.p90_hz || '?'}Hz) -> pitch_change=${pitchChange}`);
 
-  // 3. Pre-RVC: 对纯净原干声注入 Praat TD-PSOLA 活人微瑕（零 RVC 伪影，严格不脱拍）
+  // 3. Pre-RVC: 立体声 Mid/Side 居中主唱提纯(剥离宽混响/和声) + 去嗡鸣门限 + Praat TD-PSOLA 活人微瑕
   const vocalPreHum = path.join(workDir, 'vocal-prehum.wav');
   await execAsync(CONFIG.humanizerPy, [
     CONFIG.humanizerScript,
@@ -563,7 +592,7 @@ async function runHumanizedVocalPipeline({
     '--out', vocalPreHum,
   ], { timeout: 120000 });
 
-  // 4. RVC 换声（自动检查/续期声模）+ 并行生成同声纹前后口白（0 额外延迟！）
+  // 4. RVC 换声（protect=0.45 保咬字清晰、index_rate=0.28 去金属嗡声）+ 并行生成同声纹前后口白（0 额外延迟！）
   const lines = framing ? pickFramingLines({ mode: safeMode, songTitle, isOriginal, introText, outroText }) : { intro: '', outro: '' };
   const introWav = path.join(workDir, 'intro.wav');
   const outroWav = path.join(workDir, 'outro.wav');
@@ -578,9 +607,9 @@ async function runHumanizedVocalPipeline({
         custom_rvc_model_download_url: modelUrl,
         pitch_change: pitchChange,
         f0_method: 'rmvpe',
-        protect: 0.38,
-        index_rate: 0.35,
-        rms_mix_rate: 0.25,
+        protect: 0.45,
+        index_rate: 0.28,
+        rms_mix_rate: 0.32,
         output_format: 'wav',
       }, 'RVC-v2');
       const url = Array.isArray(out) ? out.at(-1) : out;
@@ -764,8 +793,8 @@ export async function coverSong({
       throw new Error('请提供歌名(song)、音频文件(file)或音频链接(url)');
     }
 
-    // 定位最佳主歌+副歌窗口（默认 ~45s，加上口白正好 55~58s 单条语音）
-    const win = await locateSongWindow(sourcePath, { start, seconds: Math.min(48, Number(seconds) || 45), log });
+    // 阶段 A：宽裕粗切（约 62s），待 Demucs 分出纯净人声轨后再精准按完整乐句锁边裁剪
+    const win = await locateSongWindow(sourcePath, { start, seconds: Math.min(45, Number(seconds) || 42), coarse: true, log });
     const clipWav = path.join(workDir, 'clip.wav');
     await ff([
       '-ss', String(win.start.toFixed(2)),
@@ -785,6 +814,8 @@ export async function coverSong({
       songTitle: resolvedTitle,
       isOriginal: false,
       framing,
+      exactPhraseTrim: Boolean(win.exactTrim),
+      targetSongSec: Math.min(43, Number(seconds) || 41),
       introText: intro,
       outroText: outro,
       pitchOverride: pitchChange,

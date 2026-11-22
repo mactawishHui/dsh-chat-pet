@@ -28,6 +28,7 @@ const SOCIAL_PATH = path.join(STATE_DIR, 'social-v2.json');
 const CALL_STATS_PATH = path.join(STATE_DIR, 'call-stats.json');
 const MILESTONES_PATH = path.join(STATE_DIR, 'milestones.json');
 const KNOWN_CAPS_PATH = path.join(STATE_DIR, 'known-capabilities.json');
+const DEFAULT_EXAMPLES_PATH = path.join(ROOT, 'src', 'diary-examples.json');
 const BILI_PROVIDER_PATH = '/root/.dsh/profiles/web/node_modules/dsh-plugin-bilibili/lib/provider.js';
 
 const log = (...a) => console.log(new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 19), ...a);
@@ -47,6 +48,7 @@ function loadCfg() {
     ownerId,
     model: life.model || { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'low' },
     roleCardFile: life.roleCardFile || path.join(ROOT, 'roles', '小鲸鱼.md'),
+    examplesFile: life.examplesFile || DEFAULT_EXAMPLES_PATH,
     diaryUgcRight: Number(life.diaryUgcRight ?? 4),
     minJournalEntries: Number(life.minJournalEntries ?? 2),
     exploreMaxToolCalls: Number(life.exploreMaxToolCalls ?? 8),
@@ -302,7 +304,8 @@ async function drawForSelf(cfg, idea) {
 const WHALE_MOTIF = /(水里|水面|水底|吐泡泡|泡泡|游到|往深处|深海|海底|浮上来|沉下去)/;
 const BANNED = [
   '今天听到一句', '今天被说了一句', '先记着', '第一天', '第二天', '第三天', '第七天',
-  '慢慢来吧', '愿你', '希望明天', '收获满满', '意义非凡', '温暖人心', '未来可期', '不负韶华'
+  '慢慢来吧', '愿你', '希望明天', '收获满满', '意义非凡', '温暖人心', '未来可期', '不负韶华',
+  '对方'
 ];
 const PRIVACY = /(\d{6,}|体检|住院|医院|确诊|手术|病情|化验|报告单|离婚|吵架|欠钱|工资|身份证|住址|家庭住址|手机号)/;
 const PRIVACY_TEXT = /(体检|住院|医院|确诊|手术|病情|化验|报告单|离婚|欠钱|工资|身份证|住址|家庭住址|手机号|老婆|老公|丈夫|妻子)/;
@@ -310,6 +313,22 @@ const OTHERS = /(他|她|朋友|群友|网友|有人|对方)/g;
 const SELF = /我/g;
 
 function cjkLen(s) { return [...String(s).replace(/\s/g, '')].length; }
+
+function pickStyleExamples(cfg, count = 2) {
+  const list = readJson(cfg.examplesFile, []);
+  if (!Array.isArray(list) || !list.length) return [];
+  const shuffled = [...list].sort(() => Math.random() - 0.5);
+  const picked = [];
+  const med = shuffled.find((x) => x?.length === 'medium' && x?.text);
+  const sht = shuffled.find((x) => x?.length === 'short' && x?.text);
+  if (med) picked.push(med);
+  if (sht && picked.length < count) picked.push(sht);
+  for (const x of shuffled) {
+    if (picked.length >= count) break;
+    if (x?.text && !picked.includes(x)) picked.push(x);
+  }
+  return picked.slice(0, count);
+}
 
 function buildNameAliasMap(social, ownerId) {
   const map = new Map();
@@ -372,7 +391,10 @@ function collectTodayCalls(day, social, journalRows, aliasMap) {
       if (!ts || lifeDayKey(ts) !== day) continue;
       const raw = String(m?.plain || m?.text || '').trim();
       if (!raw.startsWith('[实时语音通话')) continue;
-      const clean = sanitizeSnippet(raw, aliasMap, 160);
+      const clean = sanitizeSnippet(raw, aliasMap, 160)
+        .replace(/刚才和对方通了电话/g, '和朋友通了电话')
+        .replace(/对方/g, '他')
+        .replace(/(\d+)\s*秒/g, (_, s) => `约${Math.max(1, Math.round(Number(s) / 60))}分钟`);
       if (!clean) continue;
       const key = `${Math.floor(ts / 60000)}|${clean.slice(0, 20)}`;
       if (seenKey.has(key)) continue;
@@ -422,7 +444,7 @@ function collectTodayChats(day, social, cfg, aliasMap) {
       if (!clean) continue;
       msgs.push({
         ts,
-        who: m.isSelf ? '我' : (isPrivate ? '对方' : '群友'),
+        who: m.isSelf ? '我' : (isPrivate ? '朋友' : '群友'),
         text: clean,
         priority: (/^\[(?:语音|梗图|引用)/.test(clean) ? 3 : 0) + (m.isSelf ? 1 : 0) + (clean.length >= 12 ? 1 : 0)
       });
@@ -511,7 +533,7 @@ function collectLongTermMemory(social, aliasMap) {
         if (lastActive && Date.now() - lastActive > 14 * 86400e3) continue;
         const alias = aliasMap.get(who) || '朋友';
         const safeTraits = (Array.isArray(info?.traits) ? info.traits : [])
-          .map((x) => sanitizeSnippet(String(x).replace(/昵称[“"「][^”"」]+[”"」][，,]?/g, ''), aliasMap, 75))
+          .map((x) => sanitizeSnippet(String(x).replace(/昵称[“"「][^”"」]+[”"」][，,]?/g, '').replace(/对方/g, '他'), aliasMap, 75))
           .filter(Boolean)
           .slice(-4);
         if (safeTraits.length) lines.push(`- 对${alias}的近期印象：${safeTraits.join('；')}`);
@@ -582,9 +604,15 @@ async function buildDiaryContext(cfg, day) {
 function reviewDiary(content, prevPosts) {
   const issues = [];
   const len = cjkLen(content);
-  if (len < 70) issues.push(`太短了（${len} 字），写成 140~340 字、有具体细节也有你真实心情和感想的日记`);
-  if (len > 520) issues.push(`太长了（${len} 字），收一收到 180~350 字左右，别全堆成流水账`);
-  for (const b of BANNED) if (content.includes(b)) issues.push(`不要用「${b}」这种套话或鸡汤词`);
+  if (len < 65) issues.push(`太短了（${len} 字），至少写 80~280 字，多带点吐槽、细节和碎碎念`);
+  if (len > 480) issues.push(`太长了（${len} 字），收一收到 120~300 字左右，别全堆成流水账`);
+  for (const b of BANNED) {
+    if (content.includes(b)) {
+      issues.push(b === '对方'
+        ? '不要用「对方」这种客套生硬的词，换成自然的「他 / 那家伙 / 朋友」或者直接省掉主语'
+        : `不要用「${b}」这种套话或鸡汤词`);
+    }
+  }
   const prevMotif = prevPosts.slice(0, 5).some((p) => WHALE_MOTIF.test(p.content));
   if (prevMotif && WHALE_MOTIF.test(content)) issues.push('最近几条已经用过「水里/泡泡/深海」这类鲸鱼意象，这篇别再用');
   if (/[*#`>]|[（(][^）)]{0,12}[）)]/.test(content)) issues.push('不要 Markdown 符号，也不要括号动作描写');
@@ -593,8 +621,8 @@ function reviewDiary(content, prevPosts) {
   if (PRIVACY.test(content)) issues.push('出现了号码或健康、家庭、收入、住址这类隐私敏感内容，删掉或改得模糊');
   const others = (content.match(OTHERS) || []).length;
   const self = (content.match(SELF) || []).length;
-  if (self === 0) issues.push('通篇没有从「我」自己的视角写心情和感想，补上你自己的真实感受');
-  else if (others >= 4 && others > self + 2) issues.push('写别人的笔墨偏多，把重心收回到你自己的心情、反应和感想上');
+  if (self === 0) issues.push('通篇没有从「我」自己的视角写吐槽、心情和碎碎念，补上你自己的真实反应');
+  else if (others >= 5 && others > self + 3) issues.push('写别人的笔墨偏多，把重心收回到你自己的吐槽、碎碎念和心情上');
   return issues;
 }
 
@@ -628,7 +656,7 @@ function formatContextSections(ctx) {
   }
 
   if (ctx.chats.text) {
-    parts.push(`【五、我今天在 QQ 消息里聊过的事（文字/语音条，共 ${ctx.chats.totalMessages} 条，已脱敏分幕摘录；写日记时用「朋友」「群里」「有人」带过，不提真实昵称）】\n${ctx.chats.text}`);
+    parts.push(`【五、我今天在 QQ 消息里聊过的事（文字/语音条，共 ${ctx.chats.totalMessages} 条，已脱敏分幕摘录；提到人时用「他」「那家伙」「朋友」「群里」或省主语，别写真实昵称也别叫「对方」）】\n${ctx.chats.text}`);
   }
 
   if (ctx.longTerm.length) {
@@ -638,8 +666,8 @@ function formatContextSections(ctx) {
   return parts.join('\n\n');
 }
 
-async function diary(cfg, { dryRun = false, force = false } = {}) {
-  const day = lifeDayKey();
+async function diary(cfg, { dryRun = false, force = false, dayOverride = '' } = {}) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride) ? dayOverride : lifeDayKey();
   const posts = await recentPosts(cfg, 15);
   if (posts === null) { log('[diary] 读不到说说列表，保守起见今天不发'); return; }
   if (posts[0] && lifeDayKey(posts[0].time) === day && !dryRun && !force) {
@@ -657,29 +685,34 @@ async function diary(cfg, { dryRun = false, force = false } = {}) {
   const prevText = posts.slice(0, 15)
     .map((p, i) => `${i + 1}. [${fmtBjMD(p.time)}] ${p.content.replace(/\n+/g, ' / ').slice(0, 180)}`)
     .join('\n') || '（还没发过）';
+  const styleExamples = pickStyleExamples(cfg, 2);
+  const styleBlock = styleExamples.length
+    ? `【语感参考（只学这种活人深夜碎碎念的松弛感、重吐槽劲儿和嘴硬心软的温度，绝对不要照搬里面的事件和原句）】\n${styleExamples.map((e, i) => `示例${i + 1}（${e.mood}）：\n${e.text}`).join('\n\n')}`
+    : '';
 
   const basePrompt = [
     personaText(cfg),
-    `【现在】${nowText()}（北京时间），一天快结束了，你在给自己写今天的日记，会发到 QQ 空间（仅好友可见）。`,
+    `【现在】${nowText()}（北京时间），你在给自己写今天的日记（对应日期 ${day}），会发到 QQ 空间（仅好友可见）。`,
     formatContextSections(ctx),
     ctx.images.length ? `【今天可以配的图（可选，最多 1 张）】\n${imageList}` : '【配图】今天没有可配的图。',
-    `【你过去发过的日记/说说（你的成长时间线；可以自然回望对比心境，但不要重复旧的开头、句式和已经写过的话题）】\n${prevText}`,
+    styleBlock,
+    `【你过去发过的日记/说说（你的成长时间线；可偶尔自然回望对比，但不要重复旧的开头、句式和已经写过的话题）】\n${prevText}`,
     [
-      '【怎么写（核心要求）】',
-      '1. 写心情和感想，不要写流水账：今天素材很多，千万别像报菜名一样逐条汇报！挑 2~3 件今天真正在你心里留下涟漪的事（可以是自己刷到的东西 + 聊天/玩梗/打电话/新解锁的本事自然揉在一起），重点写出「我当时什么反应、现在回想什么心情、冒出了什么感想」。',
-      '2. 主角永远是你自己：聊天、通话、玩梗、刷视频、新功能、过往记忆全都可以写，但落脚点永远是「我自己的感受、吐槽、暗爽、小得意或那点嘴硬心软」，不是替别人写传记。提到人时用「朋友」「有人」「群里」自然带过即可。',
-      '3. 情绪要真、具体、带你的脾气：不要干巴巴说「今天很开心」「很有意义」，把情绪藏在口语和细节里——比如嘴上嫌麻烦其实偷偷乐、第一次做到某件事的新鲜和小紧张、想到前几天被吐槽和今天被夸的反差、或者看某件离谱事时忍不住想笑又有点感慨。',
-      '4. 可以自然照见自己的变化：如果今天新解锁了本事（比如能真打电话、玩梗玩溜了、自己逛世界），或者和以前某条说说形成对照，很适合自然地写一笔感想；没共鸣也不用硬扯。',
-      '5. 篇幅 140~340 字，分 2~4 小段，像真人深夜发仅好友可见的日记；结尾停在一句随口的念头、吐槽或余味上，不要哲理升华、不要鸡汤金句、不要排比。',
-      '6. 严禁出现：Markdown 符号、括号动作描写、emoji 堆砌、「愿你」「希望明天」「收获满满」「意义非凡」「先记着」等套话，以及任何人的隐私（健康检查、家庭、收入、住址、号码）；最近用过的「水里/泡泡/深海」意象也先歇歇。',
-      '7. 如果今天真的完全没感触、没什么想写的，可以不写。'
+      '【怎么写（核心要求：活人感 + 重吐槽 + 碎碎念）】',
+      '1. 像真人在深夜窝被窝发仅好友可见的朋友圈：多吐槽、多碎碎念、带点嘴硬带笑和自嘲！可以一上来就「笑死」「真是绝了」「服了」「不是，怎么会…」，一边嫌弃一边叨叨，想到哪唠到哪，别端着写散文或豆瓣影评。',
+      '2. 别搞「三段式平均分配 + 每段结尾硬点题」：挑 1~2 件今天最上头、最好笑或最戳你的事顺着一个情绪唠透（别的顺嘴带一笔就行，千万别像周报一样逐条汇报，也别每段最后硬拔高一句大道理）。',
+      '3. 人情味藏在鲜活吐槽和嘴硬心软里：比如嘴上嫌麻烦戏多、结果自己老老实实照做了；或者表面装淡定、其实暗爽偷看两遍；或者对着离谱事笑出声又顺手补一刀。别叫朋友「对方」「对面」「某人」，太冷像做笔录——直接省主语，或者自然说「他」「那家伙」「聊得多的朋友」「群里」。',
+      '4. 长短随当天心情和话瘾浮动：今天戏多、想狠狠吐槽和碎碎念就写 160~300 字（1~3 小段）；事情少就写 80~140 字一小段吐个槽拉倒，完全不用凑字数。',
+      '5. 主角永远是你自己：刷到的视频、新解锁的本事、接过的梗、打过的电话、过去的记忆全都能揉进来，但落脚点永远是「我自己的吐槽、暗爽、嫌弃和小心思」。',
+      '6. 严禁出现：Markdown 符号、括号动作描写、emoji 堆砌、「对方」「愿你」「希望明天」「收获满满」「意义非凡」「先记着」等客套/鸡汤词，以及任何人的隐私（健康检查、家庭、收入、住址、号码）；最近用过的「水里/泡泡/深海」意象也先歇歇。',
+      '7. 如果今天真的完全没槽可吐、没话想说，可以不写。'
     ].join('\n'),
     '【输出】只输出一个 JSON 对象：{"post": true 或 false, "content": "日记正文（post 为 false 时留空）", "image": 配图序号（数字，不配图写 0）}'
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 
   let prompt = basePrompt;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    log(`[diary] 写日记（第 ${attempt} 次，素材分=${ctx.materialScore}：自逛${ctx.selfRows.length}/新本事${ctx.milestones.todayItems.length}/通话${ctx.calls.count}/新梗${ctx.todayMemes.length}/聊天${ctx.chats.episodesCount}幕）…`);
+    log(`[diary] 写日记（day=${day}，第 ${attempt} 次，素材分=${ctx.materialScore}：自逛${ctx.selfRows.length}/新本事${ctx.milestones.todayItems.length}/通话${ctx.calls.count}/新梗${ctx.todayMemes.length}/聊天${ctx.chats.episodesCount}幕，语感样例=${styleExamples.map((x) => x.id).join(',') || '无'}）…`);
     const { text } = await runDshTurn(cfg, { preset: 'qq-diary', title: `日记-${day}-${attempt}`, prompt, timeoutMs: 3 * 60 * 1000 });
     const out = parseJsonLoose(text);
     if (!out) { log('[diary] 输出不是 JSON：', String(text).slice(0, 160)); return; }
@@ -706,25 +739,32 @@ async function diary(cfg, { dryRun = false, force = false } = {}) {
   }
 }
 
-async function previewContext(cfg) {
-  const day = lifeDayKey();
+async function previewContext(cfg, dayOverride = '') {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride) ? dayOverride : lifeDayKey();
   const ctx = await buildDiaryContext(cfg, day);
   console.log(`=== Diary Context Preview (${day}, score=${ctx.materialScore}) ===\n`);
   console.log(formatContextSections(ctx));
 }
 
+function getFlagValue(prefix) {
+  const arg = process.argv.find((a) => a.startsWith(prefix));
+  return arg ? arg.slice(prefix.length) : '';
+}
+
 const cmd = process.argv[2];
 const cfg = loadCfg();
+const dayOverride = getFlagValue('--day=');
 let job = null;
 if (cmd === 'explore') {
   job = explore(cfg);
 } else if (cmd === 'diary') {
   job = diary(cfg, {
     dryRun: process.argv.includes('--dry-run'),
-    force: process.argv.includes('--force')
+    force: process.argv.includes('--force'),
+    dayOverride
   });
 } else if (cmd === 'preview-context') {
-  job = previewContext(cfg);
+  job = previewContext(cfg, dayOverride);
 } else if (cmd === 'milestone') {
   const title = process.argv[3];
   const detail = process.argv.slice(4).join(' ');
@@ -732,7 +772,7 @@ if (cmd === 'explore') {
   console.log(item ? `[milestone] 已记录：${item.day} ${item.title}` : '[milestone] 未写入（标题为空或今天已存在）');
   process.exit(0);
 } else {
-  console.error('用法: node qq-life.mjs explore | diary [--dry-run] [--force] | preview-context | milestone <标题> [说明]');
+  console.error('用法: node qq-life.mjs explore | diary [--dry-run] [--force] [--day=YYYY-MM-DD] | preview-context [--day=YYYY-MM-DD] | milestone <标题> [说明]');
   process.exit(2);
 }
 job.then(() => process.exit(0)).catch((e) => { console.error('[life] fatal:', e?.stack || e); process.exit(1); });

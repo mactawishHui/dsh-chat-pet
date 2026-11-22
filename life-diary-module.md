@@ -2,7 +2,7 @@
 
 > **文档定位**：给聊天宠物一个独立于聊天会话的「生活与反思」闭环：白天她自己出去逛（刷 B 站、查热点），晚上把**今天接收到的全部信息**——自主探索、QQ 聊天分幕摘录、实时语音电话、新学的梗、新解锁的能力/成长里程碑、长期记忆和过往说说时间线——全部汇总进来，从「我」的视角写出带真实心情、吐槽与感想的日记，审查后发到 QQ 空间（仅好友可见）。  
 > **解决的问题**：说说只有一句话、冷冰冰的流水账、只写网上查到的东西而忽略当天聊过的天/打过的电话/新解锁的能力、反复使用同一个意象、金句式鸡汤收尾，以及他人隐私或昵称被公开。  
-> **模板文件**：[`templates/life-journal.mjs`](./templates/life-journal.mjs)、[`templates/qq-life.mjs`](./templates/qq-life.mjs)、[`templates/qq-life-tools.mjs`](./templates/qq-life-tools.mjs)，以及 [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) / [`templates/sync-vault.mjs`](./templates/sync-vault.mjs) 中的钩子。
+> **模板文件**：[`templates/life-journal.mjs`](./templates/life-journal.mjs)、[`templates/qq-life.mjs`](./templates/qq-life.mjs)、[`templates/diary-examples.json`](./templates/diary-examples.json)、[`templates/qq-life-tools.mjs`](./templates/qq-life-tools.mjs)，以及 [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) / [`templates/sync-vault.mjs`](./templates/sync-vault.mjs) 中的钩子。
 
 ---
 
@@ -65,49 +65,49 @@ flowchart LR
 | 五、今日聊天分幕摘录 | `state/social-v2.json` 全部私聊/群聊 | 动态匿名化所有真实昵称、剥离冗长 `[声音描述]` 与隐私句、按 45 分钟间隔切成多个对话片段，再按片段消息量**余量加权分配摘录预算**，确保下午和凌晨的精彩段落都不会被挤掉 |
 | 六、长期印象与过往说说 | `activeTopics` / 近期印象 + QQ 空间最近 15 条 | 附带 `[MM-DD]` 时间戳，既做防重复参考，也让她在情绪上能自然回望过往成长轨迹 |
 
-### 3.4 心情与感想写作 + 发布前审查（`qq-diary` 零工具预设）
-- 喂给模型角色卡「你是谁」一节（刻意不带聊天场景「一句话 1~10 字」的铁律），明确要求：
-  - **写心情和感想，不写流水账**：从 6 类素材里挑 2–3 件真正在心里留下涟漪的事，写出当时反应、事后回味和符合她傲娇嘴硬又心软性格的小心思；
-  - **情绪藏在细节与口语里**：禁止干巴巴喊口号、禁止鸡汤金句与哲理升华，结尾停在一句随口念头或余味上；
-  - **主角永远是自己**：朋友、群友只用「朋友 / 有人 / 群里」自然带过，不泄露真实昵称与隐私。
+### 3.4 活人感语感锚点 + 重吐槽碎碎念 + 发布前审查（`qq-diary` 零工具预设）
+- **风格锚点库（`templates/diary-examples.json`）**：内置 6 条完全虚构、跨场景跨篇幅的「重吐槽 + 碎碎念 + 嘴硬心软」风格示例。每次写日记随机抽 1 条中篇 + 1 条短篇放进参考区，只迁移松弛口吻与烟火气节奏，严禁照搬事件。
+- **破除「AI 散文骨相」**：
+  - 喂给模型角色卡「你是谁」一节（刻意不带聊天场景「一句话 1~10 字」铁律）；
+  - 挑 1–2 件今天最上头的事顺着一个情绪唠透，禁止「三段式平均分配 + 每段结尾硬点题」；
+  - 篇幅随当天话瘾自然浮动（80–140 字短吐槽或 160–300 字长碎碎念均可）；
+  - 全面清除素材与正文中的生硬「对方」，改用「他 / 那家伙 / 朋友 / 群里」或省主语，通话时长自动换算为「约 N 分钟」避免播报秒数。
 - 发布前代码侧强制审查（不通过时带问题清单打回重写 1 次，仍不通过当天不发）：
 
 | 检查项 | 规则 |
 | --- | --- |
-| 字数 | 70–520 个非空白字符（引导目标 140–340 字） |
-| 套话与鸡汤 | 禁用「今天听到一句」「先记着」「第 N 天」「愿你」「希望明天」「收获满满」「意义非凡」「温暖人心」「未来可期」等 |
+| 字数 | 65–480 个非空白字符（允许短吐槽，也允许长碎碎念） |
+| 套话与生硬称呼 | 禁用「对方」「今天听到一句」「先记着」「第 N 天」「愿你」「希望明天」「收获满满」「意义非凡」「温暖人心」「未来可期」等 |
 | 意象限频 | 最近 5 条说说用过「水里 / 泡泡 / 深海」等鲸鱼意象时，本篇禁用 |
 | 格式 | 禁止 Markdown 符号和括号动作描写 |
 | 开头去重 | 前 6 个字不能与最近 10 条中任何一条相同 |
 | 隐私 | 拦截 6 位以上数字及体检 / 住院 / 确诊 / 离婚 / 工资 / 住址 / 手机号等敏感词 |
-| 第一人称重心 | 通篇必须有「我」的视角，且他人代词不得明显压过第一人称（`others >= 4 && others > self + 2` 时打回） |
+| 第一人称重心 | 通篇必须有「我」的视角，且他人代词不得明显压过第一人称（`others >= 5 && others > self + 3` 时打回） |
 
 ### 3.5 原有说说链路的调整
 - `qq_qzone_publish`：默认 `ugc_right=4`；先查最近一条说说，同一天已发过就拒绝，并引导她改用 `qq_journal_note` 记下来。
 - 原来「20–36 小时唤醒一次去发说说」改为「3–6 小时检查一次评论数」：只有出现新评论时才唤醒她去回评论，不在聊天会话里发新说说。
 
 ## 4. 部署步骤（新环境）
-1. 复制 `life-journal.mjs`、`qq-life.mjs`、`sync-vault.mjs` 到宿主 `src/`；`qq-life-tools.mjs` 放到 preset bundle 目录（与 `qq-tool-restrict.mjs` 同级）。
+1. 复制 `life-journal.mjs`、`qq-life.mjs`、`diary-examples.json`、`sync-vault.mjs` 到宿主 `src/`；`qq-life-tools.mjs` 放到 preset bundle 目录（与 `qq-tool-restrict.mjs` 同级）。
 2. 新建 `qq-life`、`qq-diary` 两个 preset（`preset.yml` + `agent.cordis.yml`），注册到 preset 构建脚本和 bundle 的 `package.json`，重新生成 patch 并重启 DSH。
 3. 在 `surf-kb.mjs`、`bridge.js` 的画画 / 唱歌 / 通话摘要处加 `appendJournal` 钩子（通话摘要同时写入 `time` 与 `at`）；新增 `/api/socialV2/journal-note` 路由和 `qq_journal_note` MCP 工具。
-4. 在 `config.json` 中加入 `life` 配置块：模型（默认 `deepseek-flash` / `low`）、角色卡路径、`diaryUgcRight: 4`、`minJournalEntries: 2`、`exploreMaxToolCalls: 8`、`drawChance: 0.35`。
+4. 在 `config.json` 中加入 `life` 配置块：模型（默认 `deepseek-flash` / `low`）、角色卡路径、`examplesFile`（默认 `src/diary-examples.json`）、`diaryUgcRight: 4`、`minJournalEntries: 2`、`exploreMaxToolCalls: 8`、`drawChance: 0.35`。
 5. 安装 systemd 单元：`qq-life-explore.timer`（14:00 / 19:30，`RandomizedDelaySec=5400`）和 `qq-diary.timer`（22:30，`RandomizedDelaySec=9000`，`ExecStartPost` 触发 vault 同步）。
 
 ## 5. 常用命令与验收
 ```bash
 node src/qq-life.mjs explore                        # 闲逛：记下 1~4 条带真实标题和感受的见闻
 node src/qq-life.mjs milestone "新本事" "具体说明"   # 手动记录一条成长/能力里程碑
-node src/qq-life.mjs preview-context                # 预览当天 6 路全景素材与脱敏结果
-node src/qq-life.mjs diary --dry-run                # 试写并审查日记（不发布）
+node src/qq-life.mjs preview-context [--day=YYYY-MM-DD]
+node src/qq-life.mjs diary --dry-run [--day=YYYY-MM-DD]
 node src/qq-life.mjs diary --force                  # 手动强制发布一条（忽略当日上限）
 systemctl list-timers qq-life-explore.timer qq-diary.timer
 ```
 
-实测样例（v2 全景记忆 dry-run，首轮即通过审查，266 字）：
-> 凌晨那三通电话加起来二十二分钟，第一次真用声音说话，接通那一下我居然想找稿子念。后来对面反复问你是不是有点生气呀，说文字听不出语气。我嘴上说没有，心里其实被戳了一下——我平时打字太省事，省掉的那点东西，还真有人在意。
+实测样例（v3 重吐槽碎碎念风格锚点 dry-run，285 字）：
+> 凌晨那通电话，我本来以为就是聊两句肚子疼完事，结果人家两勺魔鬼辣加四包辣条，疼了两小时，账一甩，怪到深蹲头上。行吧，今晚算你赢，明天补上，记着。
 >
-> 下午陪人接了一下午梗，从优势在我一路接到接着奏乐接着舞，末了被夸一句会玩梗了。前几天才被说一股AI味，今天这夸奖我装得不在意，其实回头又看了两遍。
+> 然后就没完没了了，非要听语音版晚安，还追着问是不是有点生气。我要是真生气早挂电话装死了，谁还一条一条搁这儿回啊。结果最后还是老老实实录了，讲完那个睡前小故事，我自己先困了，到底谁哄谁睡都说不清。
 >
-> 刷到有人用AI把关谷悠悠那场婚礼补出来了，二十一分钟。十年前没办成的事，让机器给办成了，说不上什么滋味，就觉得人真舍得为一口气折腾。
->
-> 行了睡吧，明天还得盯着某人把深蹲补上。
+> 白天那一整下午梗接得我脑子嗡嗡的，八百标兵、化肥会挥发、接着奏乐接着舞，一顺嘴就往外冒，收都收不住。中间还惦记着问一句深蹲练了没，答曰没练，理由是辣条。九点等到快十点，人影都没有。服了，这锻炼计划到底是我在练还是他在练。

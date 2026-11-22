@@ -24,7 +24,9 @@ const PACER_PREFILL_BYTES = PCM24K_BYTES_PER_MS * 180; // 180ms 预充水库（�
 
 // 只匹配真正“话没说完”的连接词/思考停顿词（绝不包含「了/的/吧/呢/啊/呀」等句末完结词！）
 const CONTINUATION_RE = /(然后|就是|但是|不过|因为|所以|那个|这个|而且|比如|其实|好像|可能|我觉得|就是说|另外|还有|或者|的话|嗯|呃|唉|都)[，,、。.\s]*$/;
-const GOODBYE_RE = /(先挂了|挂了吧|我挂了|拜拜|再见|晚安|不聊了|先这样|回头聊|下次聊)/;
+// 严格匹配真正的挂断道别（避免把“晚安大小姐”“再见爱人”等梗/片名误判为道别挂断）
+const GOODBYE_RE = /(先挂了|挂了吧|我挂了|不聊了|先这样吧|回头聊|下次聊|(?:^|[，,。！!\s])(?:拜拜|再见|晚安)(?:啦|呀|咯|哈|吧|哦|～|~|[。！!\s]|$))/;
+const AI_GOODBYE_RE = /(?:挂啦|挂咯|拜拜|再见|晚安)(?:啦|呀|咯|哈|吧|哦|～|~|[。！!\s])*$/;
 
 const DEFAULT_TTS_INSTRUCTION = '语速放慢一点，吐字松弛随意自然，像熟人私下打电话聊天一样带一点生活气、轻声气口和自然停顿，不要像播音员那样字正腔圆或赶着念完';
 
@@ -72,6 +74,9 @@ function calcRms(buf) {
 function cleanSpokenText(raw) {
   let s = String(raw || '');
   s = s.replace(/\[(?:HANGUP|SILENT)\]/gi, '');
+  // 剥离模型偶发幻觉吐出的裸 XML/JSON 工具调用标签，避免 TTS 把代码念出来
+  s = s.replace(/<(?:tool_?call|search|function|invoke|call|thought|think)[\s\S]*$/i, '');
+  s = s.replace(/\{[\s\S]*"(?:keyword|query|url|command)"[\s\S]*\}\s*$/i, '');
   s = s.replace(/https?:\/\/\S+/g, '');
   s = s.replace(/```[\s\S]*?```/g, '');
   s = s.replace(/[*_~`#>]/g, '');
@@ -905,6 +910,15 @@ export class RealtimeCallEngine {
     this._lastAsrTextChangeAt = 0;
     this._lastActivityAt = this._utteranceStartAt;
     this._askedStillThere = false;
+    // 若刚才误触发了道别挂断倒计时但对方又开口继续聊了，立即取消挂断！
+    if (this._hangupTimer) {
+      clearTimeout(this._hangupTimer);
+      this._hangupTimer = null;
+      this._hangupTriggered = false;
+      this.log('[call-engine] 对方继续开口说话，已取消自动挂断倒计时');
+    }
+    // 用户刚开口的瞬间，主动通知看屏端立刻抓一帧此刻最新画面，彻底消灭画面滞后
+    this.screenEngine?.requestFreshFrame('voice_start');
 
     const asr = new ParaformerStream({
       apiKey: this._apiKey(),
@@ -1035,6 +1049,8 @@ export class RealtimeCallEngine {
         this.screenEngine.setAudioEnabled(audioCmd.enabled, 'voice_command');
         notes.push(`[系统提示：已按对方要求${audioCmd.label}，请自然简短地答应一句]`);
       }
+      // 若最新帧超过 0.9s，最多等 360ms 让刚触发的即时快照落地，确保看到此刻最新画面
+      await this.screenEngine.waitForFreshFrame(360);
       const picked = this.screenEngine.pickFramesForTurn(text);
       if (picked.frameCount > 0) {
         screenImageParts = picked.imageParts;
@@ -1184,7 +1200,7 @@ export class RealtimeCallEngine {
         return '';
       }
 
-      const wantHangup = !isWatchAlong && (/\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && /(拜拜|挂啦|挂咯|晚安|再见)/.test(fullReply)));
+      const wantHangup = !isWatchAlong && (/\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && AI_GOODBYE_RE.test(cleanSpokenText(fullReply))));
       const spoken = cleanSpokenText(fullReply);
       if (!spoken) {
         if (fillerTimer) clearTimeout(fillerTimer);
@@ -1249,7 +1265,8 @@ export class RealtimeCallEngine {
           this._hangupTriggered = true;
           const waitLeft = Math.max(800, Math.round(this._playQueueBytes / PCM24K_BYTES_PER_MS) + 600);
           this.log(`[call-engine] 对方道别，${waitLeft}ms 后自动挂断`);
-          setTimeout(() => {
+          this._hangupTimer = setTimeout(() => {
+            this._hangupTimer = null;
             if (this.active && !this._ending) this.onHangupRequest('farewell');
           }, waitLeft);
         }
@@ -1288,6 +1305,7 @@ export class RealtimeCallEngine {
     this.active = false;
     if (this._watchdogTimer) clearInterval(this._watchdogTimer);
     if (this._pacerTimer) clearInterval(this._pacerTimer);
+    if (this._hangupTimer) { clearTimeout(this._hangupTimer); this._hangupTimer = null; }
     this._clearPlaybackQueue();
     this._turnAc?.abort();
     this._activeAsr?.abort();

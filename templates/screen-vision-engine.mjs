@@ -105,15 +105,18 @@ export class ScreenVisionEngine {
     this.onAudioTranscript = opts.onAudioTranscript || (() => {});
     this.onFrameAccepted = opts.onFrameAccepted || (() => {});
     this.onWatchCandidate = opts.onWatchCandidate || null;
+    this.onRequestFreshFrame = opts.onRequestFreshFrame || null;
     this.onActivity = opts.onActivity || (() => {});
 
     // 纯内存环形关键帧池（严禁落盘！）
-    this._latest = null; // { id, buf, ts, source, label, width, height, changeScore, lumaGrid, jpegSig }
+    this._latest = null; // { id, buf, ts, capturedAt, source, label, width, height, changeScore, lumaGrid, jpegSig }
     this._keyframes = []; // 最旧 → 最新，最多 maxHistory 帧
     this._frameSeq = 0;
     this._lastSentFrameId = 0;
     this._lastSentAt = 0;
     this._lastWatchEmitAt = 0;
+    this._lastSnapReqAt = 0;
+    this._frameWaiters = [];
     this._totalFramesIn = 0;
     this._totalKeyframes = 0;
     this._recentEvents = []; // [{ ts, kind, text }]
@@ -265,6 +268,52 @@ export class ScreenVisionEngine {
   }
 
   /**
+   * 主动向推屏端请求一帧此刻最新快照（用户刚开口或提问时调用，消除视频画面滞后）
+   */
+  requestFreshFrame(reason = 'voice_start') {
+    if (this.mode === 'off' || !this.onRequestFreshFrame) return false;
+    const now = Date.now();
+    if (now - this._lastSnapReqAt < 650) return false;
+    this._lastSnapReqAt = now;
+    try {
+      this.onRequestFreshFrame(reason);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 最多等待 timeoutMs 让正在途中的最新快照落地（若已有 900ms 内新鲜帧则 0ms 立即返回）
+   */
+  waitForFreshFrame(timeoutMs = 380) {
+    const now = Date.now();
+    if (!this.hasFreshFrame(now) || this.mode === 'off') return Promise.resolve(false);
+    if (this._latest && now - this._latest.ts <= 900) return Promise.resolve(true);
+    const startSeq = this._frameSeq;
+    this.requestFreshFrame('turn_end_sync');
+    return new Promise((resolve) => {
+      const done = (ok) => {
+        clearTimeout(timer);
+        this._frameWaiters = this._frameWaiters.filter((w) => w !== waiter);
+        resolve(ok);
+      };
+      const waiter = { afterSeq: startSeq, resolve: done };
+      const timer = setTimeout(() => done(false), timeoutMs);
+      timer.unref?.();
+      this._frameWaiters.push(waiter);
+    });
+  }
+
+  _notifyFrameWaiters() {
+    if (!this._frameWaiters.length) return;
+    const list = this._frameWaiters.slice();
+    for (const w of list) {
+      if (this._frameSeq > w.afterSeq) w.resolve(true);
+    }
+  }
+
+  /**
    * 任意 Endpoint 推入一帧 JPEG（纯内存处理，绝不写磁盘）
    */
   pushFrame(jpegBuf, meta = {}) {
@@ -273,7 +322,14 @@ export class ScreenVisionEngine {
       return { accepted: false, reason: 'invalid_jpeg' };
     }
     const now = Number(meta.ts) || Date.now();
+    const capturedAt = Number(meta.capturedAt) || 0;
     const source = String(meta.source || 'unknown');
+    const force = Boolean(meta.force);
+
+    // 乱序/陈旧帧保护：绝不允许在途堆积的旧帧覆盖已经收到的更新画面
+    if (capturedAt && this._latest?.capturedAt && this._latest.source === source && capturedAt < this._latest.capturedAt) {
+      return { accepted: false, reason: 'stale_out_of_order' };
+    }
 
     // 优先级保护：若高清晰直连源（web/local）近 5 秒刚推过帧，自动让低清晰源（qq-screen）静默避让
     if (source === 'qq-screen' && this._latest && this._latest.source !== 'qq-screen' && now - this._latest.ts < 5000) {
@@ -298,7 +354,7 @@ export class ScreenVisionEngine {
     }
 
     const isFirst = !this._latest || (now - this._latest.ts > this.maxFrameAgeMs);
-    const significant = isFirst || changeScore >= this.staticChangeThresh;
+    const significant = force || isFirst || changeScore >= this.staticChangeThresh;
 
     // 淘汰过期关键帧
     this._keyframes = this._keyframes.filter((f) => now - f.ts <= this.maxFrameAgeMs);
@@ -306,6 +362,7 @@ export class ScreenVisionEngine {
     if (!significant) {
       // 画面静止：仅刷新时间戳，不分配新帧 ID，避免重复多模态推理
       this._latest.ts = now;
+      if (capturedAt) this._latest.capturedAt = capturedAt;
       return { accepted: true, keyframe: false, changeScore };
     }
 
@@ -314,6 +371,7 @@ export class ScreenVisionEngine {
       hash: crypto.createHash('md5').update(jpegBuf.subarray(0, Math.min(4096, jpegBuf.length))).digest('hex').slice(0, 8),
       buf: Buffer.from(jpegBuf),
       ts: now,
+      capturedAt,
       source,
       label: String(meta.label || '').slice(0, 60),
       width: Number(meta.width || 0),
@@ -325,12 +383,13 @@ export class ScreenVisionEngine {
 
     this._latest = frame;
     const lastKf = this._keyframes[this._keyframes.length - 1];
-    if (!lastKf || now - lastKf.ts >= this.keyframeMinGapMs || changeScore >= this.watchChangeThresh) {
+    if (force || !lastKf || now - lastKf.ts >= this.keyframeMinGapMs || changeScore >= this.watchChangeThresh) {
       this._keyframes.push(frame);
       if (this._keyframes.length > this.maxHistory) this._keyframes.shift();
       this._totalKeyframes += 1;
     }
 
+    this._notifyFrameWaiters();
     this.onFrameAccepted(frame);
 
     // 主动陪看吐槽候选触发（真正是否开口由宿主检查安静状态与冷却后决定）
@@ -384,8 +443,9 @@ export class ScreenVisionEngine {
     const passiveWorthy = hasNewSinceLast && (msSinceLastSent >= 9000 || this._latest.changeScore >= 0.14);
 
     let selected = [];
-    if (wantsCompare && this._keyframes.length >= 2) {
-      selected = [this._keyframes[this._keyframes.length - 2], this._latest];
+    const prevKf = this._keyframes.length >= 2 ? this._keyframes[this._keyframes.length - 2] : null;
+    if (wantsCompare && prevKf && now - prevKf.ts <= 14000) {
+      selected = [prevKf, this._latest];
     } else if (wantsVisual || passiveWorthy) {
       selected = [this._latest];
     } else {

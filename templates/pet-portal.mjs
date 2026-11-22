@@ -441,8 +441,8 @@ function renderPortalHtml() {
           <button id="btnShare" class="primary" disabled>选择屏幕 / 标签页</button>
           <button id="btnStop" class="danger" disabled>停止共享</button>
           <select id="resSel" style="width:auto">
-            <option value="960">720p 省流</option>
-            <option value="1280" selected>1080p 超清</option>
+            <option value="960" selected>720p 极速零滞后（推荐）</option>
+            <option value="1280">1080p 超清看卡牌小字</option>
           </select>
           <input id="labelInput" type="text" placeholder="标签(如 电影/游戏)" style="width:125px" />
         </div>
@@ -868,7 +868,7 @@ document.body.addEventListener('click', async (ev) => {
 });
 
 // ── 看屏 & 物理三通道（直接走同源 wss:// + Cookie 鉴权，免 Token） ──
-let ws = null, wsReconnectTimer = null, stream = null, timer = null, prevGrid = null, sentCount = 0, lastPushAt = 0;
+let ws = null, wsReconnectTimer = null, stream = null, bgTimer = null, imgCap = null, capBusy = false, prevGrid = null, sentCount = 0, lastPushAt = 0;
 let curMode = 'on_demand', audioEnabled = true, hasAudioTrack = false;
 let audioCtx = null, audioSrc = null, audioProc = null, zeroGain = null;
 let resamplePos = 0, pcmPending = [], pcmPendingLen = 0;
@@ -998,6 +998,8 @@ function connectScreenWs() {
       } else {
         $('callFusePill').textContent = '💬 独立陪看模式'; $('callFusePill').className = 'pill';
       }
+    } else if (msg.type === 'snap_now') {
+      captureAndPush(true);
     } else if (msg.type === 'screen_audio') {
       $('subText').textContent = (msg.isFinal ? '' : '… ') + (msg.text || '');
     } else if (msg.type === 'reply') {
@@ -1033,12 +1035,13 @@ async function startShare() {
     const vTrack = stream.getVideoTracks()[0];
     const surface = vTrack?.getSettings?.()?.displaySurface || 'unknown';
     vTrack.onended = () => stopShare();
-    timer = setInterval(captureAndPush, 1000);
-    setTimeout(captureAndPush, 250);
+    imgCap = (typeof ImageCapture !== 'undefined') ? new ImageCapture(vTrack) : null;
+    bgTimer = createBgTimer(() => captureAndPush(false), 1400);
+    setTimeout(() => captureAndPush(true), 250);
 
     const gotAudio = wantAudio && startAudioPipeline(stream, surface);
     if (gotAudio) {
-      addMsg('sys', '已开启物理三通道：1080p 画面 + ' + (surface === 'browser' ? '标签页独立音频' : '系统音频（AI 说话自动防回声）'));
+      addMsg('sys', '已开启物理三通道：实时低延迟画面 + ' + (surface === 'browser' ? '标签页独立音频' : '系统音频（AI 说话自动防回声）'));
       $('subText').textContent = '通道 2 已接通，正在静默等待视频/游戏台词…';
     } else if (wantAudio) {
       addMsg('sys', '已共享画面（未捕获音频轨；如需听视频台词，重新共享时勾选弹窗底部的「分享音频」）');
@@ -1050,8 +1053,36 @@ async function startShare() {
   }
 }
 
+function createBgTimer(fn, ms) {
+  try {
+    const blob = new Blob(['let t=setInterval(()=>postMessage(1),' + ms + ');onmessage=()=>clearInterval(t);'], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    const w = new Worker(url);
+    w.onmessage = () => fn();
+    return { stop() { try { w.postMessage(0); w.terminate(); } catch {} URL.revokeObjectURL(url); } };
+  } catch {
+    const id = setInterval(fn, ms);
+    return { stop() { clearInterval(id); } };
+  }
+}
+
+async function grabLiveFrame() {
+  const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+  if (track && track.readyState === 'live' && typeof ImageCapture !== 'undefined') {
+    try {
+      if (!imgCap || imgCap.track !== track) imgCap = new ImageCapture(track);
+      const bmp = await imgCap.grabFrame();
+      return { src: bmp, w: bmp.width, h: bmp.height, close: () => { try { bmp.close(); } catch {} } };
+    } catch {}
+  }
+  const v = $('vid');
+  if (!v.videoWidth || !v.videoHeight) return null;
+  return { src: v, w: v.videoWidth, h: v.videoHeight, close: () => {} };
+}
+
 function stopShare() {
-  if (timer) { clearInterval(timer); timer = null; }
+  if (bgTimer) { bgTimer.stop(); bgTimer = null; }
+  imgCap = null; capBusy = false;
   teardownAudioPipeline();
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   $('vid').srcObject = null; $('vid').style.display = 'none'; $('ph').style.display = 'block';
@@ -1064,41 +1095,57 @@ function stopShare() {
   $('subText').textContent = '已停止共享并清空内存台词缓存';
 }
 
-function captureAndPush() {
-  if (!stream || !ws || ws.readyState !== 1 || curMode === 'off') return;
-  const v = $('vid');
-  if (!v.videoWidth || !v.videoHeight) return;
-  diffCtx.drawImage(v, 0, 0, 16, 9);
-  const px = diffCtx.getImageData(0, 0, 16, 9).data;
-  const grid = [];
-  for (let i = 0; i < px.length; i += 4) grid.push(Math.round(px[i]*0.299 + px[i+1]*0.587 + px[i+2]*0.114));
-  let diff = 1;
-  if (prevGrid) {
-    let s = 0;
-    for (let i = 0; i < grid.length; i++) s += Math.abs(grid[i] - prevGrid[i]);
-    diff = Math.min(1, s / (grid.length * 255));
-  }
-  $('diffBar').style.width = Math.min(100, Math.round(diff * 320)) + '%';
-  const now = Date.now();
-  if (prevGrid && diff < 0.025 && now - lastPushAt < 8000) {
-    $('statLeft').textContent = '画面静止，省流待机 (Δ=' + diff.toFixed(3) + ')';
+async function captureAndPush(forceSnap = false) {
+  if (capBusy || !stream || !ws || ws.readyState !== 1 || curMode === 'off') return;
+  // 严格背压保护：若上一帧还没传完，跳过中间帧绝不在 WS 队列里积压旧画面！
+  if (!forceSnap && ws.bufferedAmount > 32768) {
+    $('statLeft').textContent = '网络发包中，跳过旧帧防滞后 (' + Math.round(ws.bufferedAmount / 1024) + 'KB)';
     return;
   }
-  prevGrid = grid; lastPushAt = now;
-  const maxW = Number($('resSel').value) || 1280;
-  const scale = Math.min(1, maxW / v.videoWidth);
-  const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
-  capC.width = w; capC.height = h;
-  capCtx.drawImage(v, 0, 0, w, h);
-  const dataUrl = capC.toDataURL('image/jpeg', 0.78);
-  ws.send(JSON.stringify({
-    type: 'frame', data: dataUrl.slice(dataUrl.indexOf(',') + 1),
-    changeScore: Number(diff.toFixed(3)), lumaGrid: grid,
-    width: w, height: h, label: $('labelInput').value.trim() || '桌面窗口'
-  }));
-  sentCount++;
-  $('statLeft').textContent = '推送中 ' + w + 'x' + h + ' (Δ=' + diff.toFixed(3) + ')';
-  $('statRight').textContent = '已推送 ' + sentCount + ' 帧';
+  if (forceSnap && ws.bufferedAmount > 131072) return;
+  capBusy = true;
+  let grabbed = null;
+  try {
+    grabbed = await grabLiveFrame();
+    if (!grabbed) return;
+    diffCtx.drawImage(grabbed.src, 0, 0, 16, 9);
+    const px = diffCtx.getImageData(0, 0, 16, 9).data;
+    const grid = [];
+    for (let i = 0; i < px.length; i += 4) grid.push(Math.round(px[i]*0.299 + px[i+1]*0.587 + px[i+2]*0.114));
+    let diff = 1;
+    if (prevGrid) {
+      let s = 0;
+      for (let i = 0; i < grid.length; i++) s += Math.abs(grid[i] - prevGrid[i]);
+      diff = Math.min(1, s / (grid.length * 255));
+    }
+    $('diffBar').style.width = Math.min(100, Math.round(diff * 320)) + '%';
+    const now = Date.now();
+    if (!forceSnap && prevGrid && diff < 0.025 && now - lastPushAt < 8000) {
+      $('statLeft').textContent = '画面静止，省流待机 (Δ=' + diff.toFixed(3) + ')';
+      return;
+    }
+    prevGrid = grid; lastPushAt = now;
+    const maxW = Number($('resSel').value) || 960;
+    const scale = Math.min(1, maxW / grabbed.w);
+    const w = Math.round(grabbed.w * scale), h = Math.round(grabbed.h * scale);
+    capC.width = w; capC.height = h;
+    capCtx.drawImage(grabbed.src, 0, 0, w, h);
+    const q = maxW <= 960 ? 0.62 : 0.68;
+    const dataUrl = capC.toDataURL('image/jpeg', q);
+    const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const kb = Math.round((b64.length * 3) / 4096);
+    ws.send(JSON.stringify({
+      type: 'frame', data: b64, changeScore: Number(diff.toFixed(3)), lumaGrid: grid,
+      width: w, height: h, capturedAt: now, force: Boolean(forceSnap),
+      label: $('labelInput').value.trim() || '桌面窗口'
+    }));
+    sentCount++;
+    $('statLeft').textContent = (forceSnap ? '⚡即时抓取 ' : '推送中 ') + w + 'x' + h + ' · ' + kb + 'KB (Δ=' + diff.toFixed(3) + ')';
+    $('statRight').textContent = '已推送 ' + sentCount + ' 帧';
+  } finally {
+    if (grabbed) grabbed.close();
+    capBusy = false;
+  }
 }
 
 function sendAsk() {

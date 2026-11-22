@@ -20,7 +20,7 @@ const FRAME_BYTES_16K = FRAME_SAMPLES_16K * 2; // 640 bytes
 const PCM24K_BYTES_PER_MS = 48; // 24000 * 2 / 1000
 const PACER_TICK_MS = 20;
 const PACER_CHUNK_BYTES = PCM24K_BYTES_PER_MS * PACER_TICK_MS; // 960 bytes = 20ms @ 24kHz
-const PACER_PREFILL_BYTES = PCM24K_BYTES_PER_MS * 80; // 80ms 预充缓冲，彻底杜绝 PulseAudio 欠载杂音
+const PACER_PREFILL_BYTES = PCM24K_BYTES_PER_MS * 120; // 120ms 预充缓冲，即使在软件渲染高负载下也彻底杜绝欠载卡顿
 
 // 只匹配真正“话没说完”的连接词/思考停顿词（绝不包含「了/的/吧/呢/啊/呀」等句末完结词！）
 const CONTINUATION_RE = /(然后|就是|但是|不过|因为|所以|那个|这个|而且|比如|其实|好像|可能|我觉得|就是说|另外|还有|或者|的话|嗯|呃|唉|都)[，,、。.\s]*$/;
@@ -457,6 +457,9 @@ export class RealtimeCallEngine {
     this._speechFrames = 0;
     this._silenceFrames = 0;
     this._utteranceFrames = 0;
+    this._utteranceStartAt = 0;
+    this._lastAsrPartial = '';
+    this._lastAsrTextChangeAt = 0;
     this._activeAsr = null;
 
     // 1x 实时播放队列与精确打断状态（彻底消灭音频重叠！）
@@ -788,23 +791,28 @@ export class RealtimeCallEngine {
     this._preRoll.push(Buffer.from(frame));
     if (this._preRoll.length > 15) this._preRoll.shift();
 
-    // 非说话期平滑更新动态底噪
-    if (!this._inSpeech && rms < 600) {
-      this._noiseFloor = Math.max(40, Math.min(500, this._noiseFloor * 0.96 + rms * 0.04));
+    const screenActive = Boolean(this.screenEngine && this.screenEngine.hasFreshFrame());
+    const isWatchMode = Boolean(screenActive && this.screenEngine.mode === 'watch_along');
+
+    // 非说话期平滑更新动态底噪（共享屏幕含游戏/电影 BGM 时允许底噪自适应抬升至 1100，防背景音乐持续误触）
+    const floorCap = screenActive ? 1100 : 500;
+    const floorSampleMax = screenActive ? 1400 : 600;
+    if (!this._inSpeech && rms < floorSampleMax) {
+      this._noiseFloor = Math.max(40, Math.min(floorCap, this._noiseFloor * 0.94 + rms * 0.06));
     }
 
-    const isWatchMode = Boolean(this.screenEngine && this.screenEngine.mode === 'watch_along' && this.screenEngine.hasFreshFrame());
-    const watchBoost = isWatchMode ? 1.25 : 1.0;
-    const startThresh = Math.round((aiSpeaking
-      ? Math.max(500, this._noiseFloor * 3.6)
+    const watchBoost = isWatchMode ? 1.25 : (screenActive ? 1.12 : 1.0);
+    const guardBusy = aiSpeaking || (screenActive && this._aiThinking);
+    const startThresh = Math.round((guardBusy
+      ? Math.max(540, this._noiseFloor * 3.6)
       : Math.max(320, this._noiseFloor * 2.8)) * watchBoost);
     const keepThresh = Math.max(220, this._noiseFloor * 2.1);
 
     if (!this._inSpeech) {
       if (rms >= startThresh) {
         this._speechFrames++;
-        // AI 正在说话时，连续 260ms (13帧) 确认为真人打断；空闲时 100ms (5帧) 即开始收音
-        const needFrames = aiSpeaking ? 13 : 5;
+        // AI 正在说话或看屏思考期，需要 240~300ms 持续人声才打断，避免游戏音效/BGM 误杀在途回复
+        const needFrames = aiSpeaking ? 15 : (guardBusy ? 12 : (screenActive ? 7 : 5));
         if (this._speechFrames >= needFrames) {
           if (aiSpeaking || this._aiThinking) {
             this._triggerBargeIn(aiSpeaking);
@@ -829,21 +837,49 @@ export class RealtimeCallEngine {
       this._silenceFrames++;
     }
 
-    // 智能耐心断句：默认 640ms (32帧)；若刚说 1~3 个字或停在真正未完词（然后/但是/那个/嗯等）延长到 1240ms (62帧)
+    // ASR 辅助智能断句（彻底治好游戏/电影 BGM 一直响导致 VAD 卡满 25 秒才收尾的问题！）
     const partial = (this._activeAsr?.getPartialText() || '').trim();
+    const nowMs = Date.now();
+    if (partial !== this._lastAsrPartial) {
+      this._lastAsrPartial = partial;
+      this._lastAsrTextChangeAt = nowMs;
+    }
+    const uttElapsedMs = nowMs - this._utteranceStartAt;
+    if (screenActive && !partial && uttElapsedMs >= 2400) {
+      this._abortNoiseUtterance(rms);
+      return;
+    }
+
     const looksIncomplete = partial.length <= 3 || CONTINUATION_RE.test(partial);
     const needSilence = looksIncomplete ? this.longSilenceFrames : this.baseSilenceFrames;
+    const asrStaleMs = this._lastAsrTextChangeAt ? (nowMs - this._lastAsrTextChangeAt) : 0;
+    const asrFinished = partial.length >= 2 && asrStaleMs >= (looksIncomplete ? 1650 : 1150);
 
-    if (this._silenceFrames >= needSilence || this._utteranceFrames >= 1250) {
+    if (this._silenceFrames >= needSilence || asrFinished || this._utteranceFrames >= 1250) {
       this._endUserUtterance();
     }
+  }
+
+  _abortNoiseUtterance(currentRms) {
+    this._inSpeech = false;
+    this._speechFrames = 0;
+    this._silenceFrames = 0;
+    const asr = this._activeAsr;
+    this._activeAsr = null;
+    asr?.abort();
+    // 把当前游戏/电影 BGM 能量快速吸收进动态底噪，避免反复误触
+    this._noiseFloor = Math.min(1150, Math.max(this._noiseFloor * 1.15, currentRms * 0.85));
+    this.log(`[call-engine] 检测到纯背景音/游戏BGM（2.4s 无语音识别），静默忽略并自适应底噪→${Math.round(this._noiseFloor)}`);
   }
 
   _startUserUtterance() {
     this._inSpeech = true;
     this._silenceFrames = 0;
     this._utteranceFrames = 0;
-    this._lastActivityAt = Date.now();
+    this._utteranceStartAt = Date.now();
+    this._lastAsrPartial = '';
+    this._lastAsrTextChangeAt = 0;
+    this._lastActivityAt = this._utteranceStartAt;
     this._askedStillThere = false;
 
     const asr = new ParaformerStream({

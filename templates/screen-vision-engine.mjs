@@ -93,6 +93,7 @@ export class ScreenVisionEngine {
     this._keyframes = []; // 最旧 → 最新，最多 maxHistory 帧
     this._frameSeq = 0;
     this._lastSentFrameId = 0;
+    this._lastSentAt = 0;
     this._lastWatchEmitAt = 0;
     this._totalFramesIn = 0;
     this._totalKeyframes = 0;
@@ -125,6 +126,7 @@ export class ScreenVisionEngine {
     this._latest = null;
     this._keyframes = [];
     this._lastSentFrameId = 0;
+    this._lastSentAt = 0;
     if (had) {
       this.log(`[screen-vision] 已清空内存帧缓存 (${reason})`);
       this._recordEvent('clear', '已停止共享并清空内存画面');
@@ -258,11 +260,14 @@ export class ScreenVisionEngine {
     const wantsCompare = COMPARE_INTENT_RE.test(t);
     const wantsVisual = force || VISUAL_INTENT_RE.test(t);
     const hasNewSinceLast = this._latest.id !== this._lastSentFrameId;
+    const msSinceLastSent = now - (this._lastSentAt || 0);
+    // 随口短搭话（如「嗯」「对」「不错」「再玩会儿」）若 9 秒内刚发过图且画面变化不大，跳过重复附帧，把响应压回 ~0.9s
+    const passiveWorthy = hasNewSinceLast && (msSinceLastSent >= 9000 || this._latest.changeScore >= 0.14);
 
     let selected = [];
     if (wantsCompare && this._keyframes.length >= 2) {
       selected = [this._keyframes[this._keyframes.length - 2], this._latest];
-    } else if (wantsVisual || hasNewSinceLast) {
+    } else if (wantsVisual || passiveWorthy) {
       selected = [this._latest];
     } else {
       return { imageParts: [], note: '', frameCount: 0 };
@@ -275,6 +280,7 @@ export class ScreenVisionEngine {
       if (!seen.has(f.id)) { seen.add(f.id); uniq.push(f); }
     }
     this._lastSentFrameId = this._latest.id;
+    this._lastSentAt = now;
 
     const imageParts = uniq.map((f, idx) => ({
       type: 'image',

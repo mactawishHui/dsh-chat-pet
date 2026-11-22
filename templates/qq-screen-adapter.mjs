@@ -32,14 +32,16 @@ export class QQScreenShareAdapter {
   constructor({
     screenEngine,
     containerName = process.env.SNOWLUMA_CONTAINER || 'snowluma',
-    pollIntervalMs = 1500,
-    maxWidth = 960,
+    pollIntervalMs = 2800,
+    maxWidth = 768,
+    isPaused = () => false,
     log = console.log
   }) {
     this.screenEngine = screenEngine;
     this.containerName = containerName;
     this.pollIntervalMs = pollIntervalMs;
     this.maxWidth = maxWidth;
+    this.isPaused = isPaused;
     this.log = log;
 
     this._running = false;
@@ -60,11 +62,34 @@ export class QQScreenShareAdapter {
 
   async _listQQWindows() {
     try {
-      const out = await this._dockerCmd('DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -iE \'"QQ"|"屏幕共享"|"共享屏幕"|"Screen"\' || true');
+      const out = await this._dockerCmd('export LC_ALL=C.UTF-8; DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -iE \'"QQ"|"屏幕共享"|"共享屏幕"|"Screen"\' || true');
       return parseXwinTree(out);
     } catch {
       return [];
     }
+  }
+
+  async _isViewable(wid) {
+    try {
+      const out = await this._dockerCmd(`export LC_ALL=C.UTF-8; DISPLAY=:1 xwininfo -id ${wid} 2>/dev/null | grep "Map State:" || true`);
+      return out.includes('IsViewable');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 精准查找当前屏幕上真实可见（IsViewable）的「屏幕共享」查看器窗口
+   */
+  async findVisibleShareWindow() {
+    const wins = await this._listQQWindows();
+    const candidates = wins
+      .filter((w) => /屏幕共享|共享屏幕|screen/i.test(w.title) && w.w >= 320 && w.h >= 240)
+      .sort((a, b) => (b.w * b.h) - (a.w * a.h));
+    for (const c of candidates) {
+      if (await this._isViewable(c.wid)) return c;
+    }
+    return null;
   }
 
   async _captureWindowJpeg(win) {
@@ -73,14 +98,14 @@ export class QQScreenShareAdapter {
     const x = Math.max(0, win.x);
     const y = Math.max(0, win.y);
     const { stdout } = await execFileAsync('docker', [
-      'exec', this.containerName, 'ffmpeg',
+      'exec', this.containerName, 'nice', '-n', '15', 'ffmpeg',
       '-loglevel', 'error',
       '-f', 'x11grab',
       '-video_size', `${w}x${h}`,
       '-i', `:1+${x},${y}`,
       '-frames:v', '1',
       '-vf', `scale='min(${this.maxWidth},iw)':-2`,
-      '-q:v', '6',
+      '-q:v', '7',
       '-f', 'mjpeg',
       'pipe:1'
     ], {
@@ -104,16 +129,24 @@ export class QQScreenShareAdapter {
     };
   }
 
-  async start(callWid = '') {
-    if (this._running) return;
+  async start(callWid = '', { forceShareWin = null } = {}) {
+    if (this._running) {
+      if (forceShareWin) {
+        this._forceShareWin = forceShareWin;
+        this._activeShareWin = forceShareWin;
+      }
+      return;
+    }
     this._running = true;
     this._callWid = String(callWid || '');
+    this._forceShareWin = forceShareWin || null;
     const wins = await this._listQQWindows();
-    this._baselineWids = new Set(wins.map((w) => w.wid));
-    this._activeShareWin = null;
-    this.log(`[qq-screen] 已挂载通话屏幕共享监测 (baseline=${this._baselineWids.size} 窗口, callWid=${this._callWid || '?'})`);
+    this._baselineWids = new Set(wins.filter((w) => !forceShareWin || w.wid !== forceShareWin.wid).map((w) => w.wid));
+    this._activeShareWin = forceShareWin || null;
+    this.log(`[qq-screen] 已挂载通话屏幕共享监测 (baseline=${this._baselineWids.size} 窗口, callWid=${this._callWid || '?'}${forceShareWin ? `, locked=${forceShareWin.wid}(${forceShareWin.w}x${forceShareWin.h})` : ''})`);
     this._timer = setInterval(() => this._tick(), this.pollIntervalMs);
     this._timer.unref?.();
+    if (forceShareWin) setTimeout(() => this._tick(), 300);
   }
 
   stop() {
@@ -121,6 +154,7 @@ export class QQScreenShareAdapter {
     this._running = false;
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     this._activeShareWin = null;
+    this._forceShareWin = null;
     if (this.screenEngine.getLatestFrame()?.source === 'qq-screen') {
       this.screenEngine.clear('qq_call_ended');
     }
@@ -128,10 +162,15 @@ export class QQScreenShareAdapter {
   }
 
   _pickShareWindow(wins) {
+    // 0. 若直接通过屏幕共享邀请进入并锁定了查看窗口，优先跟住该窗口（刷新其最新几何坐标）
+    if (this._forceShareWin) {
+      const matched = wins.find((w) => w.wid === this._forceShareWin.wid);
+      if (matched) return matched;
+    }
     // 1. 优先选标题含「共享/Screen」的独立窗口
     const titled = wins.find((w) => /共享|screen/i.test(w.title) && w.w >= 320 && w.h >= 240);
     if (titled) return titled;
-    // 2. 通话开始后新弹出的大窗口（常见于 LinuxQQ 接收远端桌面共享）
+    // 2. 通话开始后新弹出的大窗口（常见于 LinuxQQ 接收远端桌面共享，含中文标题失败回退窗口）
     const newlyOpened = wins
       .filter((w) => !this._baselineWids.has(w.wid) && w.wid !== this._callWid && w.w >= 420 && w.h >= 300)
       .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
@@ -147,14 +186,20 @@ export class QQScreenShareAdapter {
   async _tick() {
     if (!this._running || this._busy) return;
     if (this.screenEngine.mode === 'off') return;
+    // 小鲸鲸正在开口说话的 1~3 秒内暂停抓屏，把 CPU 全部让给 PulseAudio 播放，彻底消除音频卡顿
+    if (this.isPaused()) return;
     // 若更高清晰度的浏览器直连流正在活跃，省掉所有容器抓屏开销
     const latest = this.screenEngine.getLatestFrame();
     if (latest && latest.source !== 'qq-screen' && Date.now() - latest.ts < 5000) return;
 
     this._busy = true;
     try {
-      const wins = await this._listQQWindows();
-      const target = this._pickShareWindow(wins);
+      let target = await this.findVisibleShareWindow();
+      if (!target) {
+        const wins = await this._listQQWindows();
+        const fallback = this._pickShareWindow(wins);
+        if (fallback && await this._isViewable(fallback.wid)) target = fallback;
+      }
       if (!target) {
         if (this._activeShareWin) {
           this.log('[qq-screen] 检测到 QQ 屏幕共享已关闭');

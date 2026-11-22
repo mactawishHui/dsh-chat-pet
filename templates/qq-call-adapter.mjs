@@ -145,6 +145,69 @@ async function findCallWindow() {
 }
 
 /**
+ * 扫描 X11 是否存在 350x160 的 QQ 屏幕共享邀请弹窗（「XX正邀请你加入屏幕共享」）
+ */
+async function findScreenInviteWindow() {
+  try {
+    const out = await dockerExec('DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -E "350x160\\+0\\+0" | grep \'"QQ"\' | head -n 1');
+    const line = out.trim();
+    if (!line) return null;
+    const wid = line.split(/\s+/)[0];
+    const m = line.match(/\+(\d+)\+(\d+)$/);
+    return {
+      wid,
+      x: m ? Number(m[1]) : 785,
+      y: m ? Number(m[2]) : 450
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 截取 350x160 屏幕共享邀请弹窗并用快速多模态模型校验：是否单聊屏幕共享邀请 + 邀请人昵称
+ */
+async function inspectScreenInviteCard(win) {
+  const key = readDashscopeKey();
+  if (!key) return null;
+  const imgPath = '/tmp/share_verify.png';
+  await dockerExec(`ffmpeg -y -loglevel error -f x11grab -video_size 350x160 -i :1+${win.x},${win.y} -vframes 1 ${imgPath}`);
+  const b64 = (await dockerExec(`base64 -w 0 ${imgPath}; rm -f ${imgPath}`)).trim();
+  if (!b64) return null;
+
+  const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'qwen3-omni-flash',
+      temperature: 0,
+      max_tokens: 180,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
+            {
+              type: 'text',
+              text: '这是 QQ 弹窗截图。请严格只输出 JSON 对象：{"isScreenInvite": 布尔值(是否显示“正邀请你加入屏幕共享”且有“拒绝”和蓝色“加入”按钮), "isGroupCall": 布尔值(是否为多人/群屏幕共享), "callerName": "左侧头像旁显示的邀请人昵称文字（原样照抄，看不到留空）"}。只输出 JSON。'
+            }
+          ]
+        }
+      ]
+    }),
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  let raw = String(data?.choices?.[0]?.message?.content || '').trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const s = raw.indexOf('{');
+  const e = raw.lastIndexOf('}');
+  if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+/**
  * 截取 360x640 来电窗口并用快速多模态模型校验：是否好友单聊来电 + 来电人名称
  */
 async function inspectIncomingCallCard(win) {
@@ -232,6 +295,7 @@ class NativeQQCallDaemon {
     this.qqScreenAdapter = new QQScreenShareAdapter({
       screenEngine: this.screenEngine,
       containerName: CONTAINER_NAME,
+      isPaused: () => Boolean(this.engine?._isActuallySpeakingNow()),
       log
     });
   }
@@ -340,16 +404,26 @@ class NativeQQCallDaemon {
 
         if (this.state === 'idle') {
           const win = await findCallWindow();
-          if (!win) {
-            if (this.ignoredWids.size) this.ignoredWids.clear();
-          } else if (!this.ignoredWids.has(win.wid)) {
+          if (win && !this.ignoredWids.has(win.wid)) {
             await this._handleIncomingCall(win, cfg);
+          } else {
+            const shareWin = await findScreenInviteWindow();
+            if (shareWin && !this.ignoredWids.has(shareWin.wid)) {
+              await this._handleScreenShareInvite(shareWin, cfg, { duringCall: false });
+            } else if (!win && !shareWin && this.ignoredWids.size) {
+              this.ignoredWids.clear();
+            }
           }
           await sleep(450);
         } else if (this.state === 'in_call') {
+          // 若通话中途对方发起了屏幕共享邀请（350x160 弹窗），通过白名单校验后自动点「加入」
+          const shareInv = await findScreenInviteWindow();
+          if (shareInv && !this.ignoredWids.has(shareInv.wid)) {
+            await this._handleScreenShareInvite(shareInv, cfg, { duringCall: true });
+          }
           const alive = await this._isCallWindowAlive();
           if (!alive) {
-            log('[call-adapter] 检测到通话窗口关闭（对方已挂断）');
+            log('[call-adapter] 检测到通话/共享窗口关闭（对方已挂断）');
             await this._teardownCall('remote_hangup');
           }
           await sleep(1000);
@@ -460,6 +534,92 @@ class NativeQQCallDaemon {
     await this._startEngineAndAudio(matched.uin, matched.matchedName, cfg);
   }
 
+  /**
+   * 处理 QQ 屏幕共享邀请弹窗（350x160：拒绝 +209,+124 / 蓝色加入 +295,+124）
+   * 支持两种场景：1) 空闲直接点屏幕共享（同步拉起语音通话+实时看屏）；2) 语音通话中途升级屏幕共享
+   */
+  async _handleScreenShareInvite(win, cfg, { duringCall = false } = {}) {
+    if (!duringCall) this.state = 'ringing';
+    log(`[call-adapter] 检测到 QQ 屏幕共享邀请弹窗 WID=${win.wid} pos=+${win.x}+${win.y} (duringCall=${duringCall})`);
+    await sleep(600);
+
+    const card = await inspectScreenInviteCard(win);
+    log(`[call-adapter] 屏幕共享邀请识别: ${JSON.stringify(card)}`);
+    if (!card || !card.isScreenInvite) {
+      this.ignoredWids.add(win.wid);
+      if (!duringCall) this.state = 'idle';
+      return;
+    }
+
+    const matched = matchCallerWhitelist(card.callerName, this.wlMap);
+    const rejX = win.x + 209;
+    const rejY = win.y + 124;
+    const joinX = win.x + 295;
+    const joinY = win.y + 124;
+
+    if (card.isGroupCall && !cfg.allowGroupCall) {
+      log(`[call-adapter] ⛔ 拒绝群屏幕共享邀请 (${card.callerName})`);
+      await dockerExec(`DISPLAY=:1 xdotool windowactivate --sync ${win.wid} 2>/dev/null || true; sleep 0.1; DISPLAY=:1 xdotool mousemove ${rejX} ${rejY} click 1`).catch(() => {});
+      this.ignoredWids.add(win.wid);
+      if (!duringCall) { await sleep(1500); this.state = 'idle'; }
+      return;
+    }
+    if (!matched) {
+      log(`[call-adapter] ⛔ 拒绝非白名单屏幕共享邀请: callerName="${card.callerName}"`);
+      await dockerExec(`DISPLAY=:1 xdotool windowactivate --sync ${win.wid} 2>/dev/null || true; sleep 0.1; DISPLAY=:1 xdotool mousemove ${rejX} ${rejY} click 1`).catch(() => {});
+      this.ignoredWids.add(win.wid);
+      if (!duringCall) { await sleep(1500); this.state = 'idle'; }
+      return;
+    }
+
+    // 记录点击「加入」前的 QQ 窗口快照，用于精准锁定新弹出的共享画面窗口
+    const beforeProbe = await this.qqScreenAdapter.probe();
+    const beforeWids = new Set((beforeProbe.windows || []).map((w) => w.wid));
+
+    const delayMs = duringCall ? 600 : (1100 + Math.floor(Math.random() * 700));
+    log(`[call-adapter] ✅ 白名单屏幕共享验证通过: ${matched.matchedName} (${matched.uin})，${delayMs}ms 后点击「加入」`);
+    await sleep(delayMs);
+
+    await dockerExec(`DISPLAY=:1 xdotool windowactivate --sync ${win.wid} 2>/dev/null || true; sleep 0.12; DISPLAY=:1 xdotool mousemove ${joinX} ${joinY} click 1`);
+    this.ignoredWids.add(win.wid);
+
+    // 等「屏幕共享」查看器窗口变为真实可见 IsViewable（最多等 5 秒；注意 LinuxQQ 可能在点「加入」前就预创建了该 WID）
+    let viewerWin = null;
+    for (let i = 0; i < 10; i++) {
+      await sleep(500);
+      viewerWin = await this.qqScreenAdapter.findVisibleShareWindow();
+      if (viewerWin) break;
+      const afterProbe = await this.qqScreenAdapter.probe();
+      const newly = (afterProbe.windows || [])
+        .filter((w) => !beforeWids.has(w.wid) && w.wid !== win.wid && w.w >= 420 && w.h >= 300)
+        .sort((a, b) => (b.w * b.h) - (a.w * a.h));
+      if (newly.length && await this.qqScreenAdapter._isViewable(newly[0].wid)) {
+        viewerWin = newly[0];
+        break;
+      }
+    }
+    log(`[call-adapter] 屏幕共享加入后锁定窗口: ${viewerWin ? `${viewerWin.wid} "${viewerWin.title}" ${viewerWin.w}x${viewerWin.h}+${viewerWin.x}+${viewerWin.y}` : '未检测到可见共享窗'}`);
+
+    if (duringCall) {
+      if (viewerWin) {
+        this.activeWin = viewerWin;
+        await this.qqScreenAdapter.start(viewerWin.wid, { forceShareWin: viewerWin }).catch(() => {});
+      }
+      return;
+    }
+
+    // 独立屏幕共享：直接进入全双工通话 + 实时看屏模式！
+    this.state = 'in_call';
+    this.activeWin = viewerWin || await findCallWindow();
+    this.currentCall = {
+      uin: matched.uin,
+      callerName: matched.matchedName,
+      startedAt: new Date().toISOString(),
+      mode: 'screen_share'
+    };
+    await this._startEngineAndAudio(matched.uin, matched.matchedName, cfg, { forceShareWin: viewerWin });
+  }
+
   async _clickReject(win) {
     const rejX = win.x + 246;
     const rejY = win.y + 508;
@@ -469,6 +629,10 @@ class NativeQQCallDaemon {
   async _clickHangupActive() {
     const win = this.activeWin || await findCallWindow();
     if (!win) return;
+    if (this.currentCall?.mode === 'screen_share' || (win.w && win.w > 450)) {
+      await dockerExec(`DISPLAY=:1 xdotool windowclose ${win.wid} 2>/dev/null || true`).catch(() => {});
+      return;
+    }
     // 通话中底部 4 按钮：关闭麦克风 / 开启视频 / 屏幕共享 / 退出通话(+286, +508)
     const hangX = win.x + 286;
     const hangY = win.y + 508;
@@ -482,7 +646,7 @@ class NativeQQCallDaemon {
     }
     const p = spawn('docker', [
       'exec', '-i', CONTAINER_NAME, 'su', '-s', '/bin/sh', 'node', '-c',
-      'export HOME=/app XDG_RUNTIME_DIR=/tmp/runtime-1000; exec pacat -p -d ai_mic_sink --raw --format=s16le --rate=24000 --channels=1 --latency-msec=100 --process-time-msec=20 --volume=58000'
+      'export HOME=/app XDG_RUNTIME_DIR=/tmp/runtime-1000; exec pacat -p -d ai_mic_sink --raw --format=s16le --rate=24000 --channels=1 --latency-msec=160 --process-time-msec=30 --volume=58000'
     ], { stdio: ['pipe', 'ignore', 'ignore'] });
     p.on('exit', () => {
       if (this.pacatProc === p) this.pacatProc = null;
@@ -510,7 +674,7 @@ class NativeQQCallDaemon {
     return p;
   }
 
-  async _startEngineAndAudio(uin, callerName, cfg) {
+  async _startEngineAndAudio(uin, callerName, cfg, { forceShareWin = null } = {}) {
     this._spawnPacat();
 
     this.engine = new RealtimeCallEngine({
@@ -620,7 +784,7 @@ class NativeQQCallDaemon {
     });
 
     this._spawnParec();
-    await this.qqScreenAdapter.start(this.activeWin?.wid || '').catch(() => {});
+    await this.qqScreenAdapter.start(this.activeWin?.wid || '', { forceShareWin }).catch(() => {});
     try {
       await this.engine.start();
     } catch (err) {

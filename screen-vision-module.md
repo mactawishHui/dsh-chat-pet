@@ -84,3 +84,16 @@ flowchart LR
    # 调用 POST /api/screen/ask 提问画面内容：约 1.3~2.5s 返回准确口语描述
    # 切换 mode=off 后检查 status：active=false, keyframesBuffered=0
    ```
+
+---
+
+## 5. 实战踩坑与调优速查（QQ 容器屏幕共享实测沉淀）
+
+| 序号 | 真实遇到的问题 | 根因 | 最终稳健解法 |
+| --- | --- | --- | --- |
+| 1 | 直接点 QQ「屏幕共享」一直显示未接听 | 屏幕共享邀请是 **`350x160` 弹窗**（「XX正邀请你加入屏幕共享」，拒绝 `+209,+124` / 加入 `+295,+124`），与 `360x640` 语音来电窗不同 | `qq-call-adapter.mjs` 同时轮询 `360x640` 与 `350x160` 弹窗，对 `350x160` 做同样白名单多模态校验后再点「加入」，空闲直开与通话中途升级均支持 |
+| 2 | 点击「加入」2 秒后自动退出语音引擎 | LinuxQQ 在点「加入」前已预创建 `"屏幕共享"` WID，且容器默认 ASCII locale 导致 `xwininfo` 中文标题乱码，误判未弹出窗口 | 所有 `xwininfo` 命令强制加 `LC_ALL=C.UTF-8`，通过 `findVisibleShareWindow()` 按标题 `"屏幕共享"` + `Map State: IsViewable` 精准锁窗 |
+| 3 | 共享画面发黑 / 雪花，弹窗报「显示驱动不兼容」 | 容器默认给 LinuxQQ 传了 `--disable-gpu --disable-software-rasterizer --disable-gpu-compositing`，禁死了 Electron 内置的 SwiftShader 软件 WebGL | 改 `/etc/supervisord.conf` 中 `qq` 启动参数为 `--no-sandbox --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --enable-webgl --ignore-gpu-blocklist --disable-dev-shm-usage` 并用 `supervisorctl update qq` 热重启（免扫码自动重登） |
+| 4 | 开着游戏 BGM（如雪人兄弟）时突然卡住几十秒不说话 | 游戏 BGM 混入共享音频，持续高于 VAD 阈值导致录音卡满 25 秒才超时，并反复取消 AI 在途回复 | `call-engine.mjs` 加入 **ASR 辅助断句**（识别文字停顿 1.15s 即判说完，无视持续 BGM）+ **2.4s 纯 BGM 静默丢弃并自适应抬高底噪至 1100** + 思考期提高打断帧数门槛 |
+| 5 | 共享画面期间偶发网络感音频卡顿、越聊越慢 | SwiftShader 软渲 + 每 1.5s 抓 960px 帧拉高 CPU 抢占 `pacat`；且每句短搭话都重复附带截图拖慢大模型 | 抓屏改为 `nice -n 15 ffmpeg`、`2.8s` 间隔、`768px` `-q:v 7`，并在 **AI 说话期间暂停抓屏**；`pacat` 缓冲增至 `160ms`（节拍器预充 `120ms`）；非视觉短搭话 9 秒内跳过重复附帧 |
+

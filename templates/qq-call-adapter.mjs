@@ -48,8 +48,8 @@ function loadConfig() {
     defaultCity: String(raw.life?.weatherCity || '').trim(),
     dshBaseUrl: raw.dsh?.baseUrl || 'http://127.0.0.1:3080',
     dshAuthToken: raw.dsh?.authToken || '',
-    onebotHttp: `http://127.0.0.1:${Number(raw.snowluma?.httpPort || 3000)}`,
-    onebotToken: raw.snowluma?.token || ''
+    onebotHttp: String(raw.snowluma?.httpUrl || `http://127.0.0.1:${Number(raw.snowluma?.httpPort || 3000)}`).replace(/\/+$/, ''),
+    onebotToken: raw.snowluma?.accessToken || raw.snowluma?.token || ''
   };
 }
 
@@ -353,6 +353,70 @@ class NativeQQCallDaemon {
           res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ ok: true, callState: this.state, activeWin: this.activeWin, ...info }, null, 2));
           return;
+        }
+        if (urlObj.pathname === '/api/call/whitelist') {
+          const expected = readConsoleToken();
+          const provided = String(urlObj.searchParams.get('token') || req.headers['x-screen-token'] || req.headers['x-console-token'] || '').trim();
+          if (expected && provided !== expected) {
+            res.writeHead(401, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+            return;
+          }
+          if (req.method === 'GET') {
+            const curCfg = loadConfig();
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({
+              ok: true,
+              enabled: curCfg.enabled,
+              whitelist: curCfg.whitelist,
+              allowGroupCall: curCfg.allowGroupCall,
+              dailyLimitMin: curCfg.dailyLimitMin,
+              softReminderMin: curCfg.softReminderMin
+            }));
+            return;
+          }
+          if (req.method === 'POST') {
+            const chunks = [];
+            let size = 0;
+            for await (const c of req) {
+              size += c.length;
+              if (size > 256 * 1024) {
+                res.writeHead(413, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ ok: false, error: 'payload too large' }));
+                return;
+              }
+              chunks.push(c);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+            const rawFile = JSON.parse(fs.readFileSync(BRIDGE_CONFIG_PATH, 'utf8'));
+            const prevCall = rawFile.call && typeof rawFile.call === 'object' ? { ...rawFile.call } : {};
+            if (Array.isArray(body.whitelist)) {
+              const cleaned = [...new Set(
+                body.whitelist.map((x) => String(x || '').trim()).filter((x) => /^\d{5,15}$/.test(x))
+              )];
+              prevCall.whitelist = cleaned;
+            }
+            if (typeof body.enabled === 'boolean') prevCall.enabled = body.enabled;
+            if (typeof body.allowGroupCall === 'boolean') prevCall.allowGroupCall = body.allowGroupCall;
+            rawFile.call = prevCall;
+            const tmpPath = `${BRIDGE_CONFIG_PATH}.tmp.${process.pid}`;
+            fs.writeFileSync(tmpPath, JSON.stringify(rawFile, null, 2) + '\n', 'utf8');
+            fs.renameSync(tmpPath, BRIDGE_CONFIG_PATH);
+
+            const nextCfg = loadConfig();
+            this.wlMap = await fetchFriendWhitelistMap(nextCfg);
+            this.lastWlRefresh = Date.now();
+            log(`[call-adapter] 语音通话白名单已热更新: [${nextCfg.whitelist.join(', ')}] | 总开关: ${nextCfg.enabled ? '开' : '关'} | 群通话: ${nextCfg.allowGroupCall ? '开' : '关'}`);
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({
+              ok: true,
+              enabled: nextCfg.enabled,
+              whitelist: nextCfg.whitelist,
+              allowGroupCall: nextCfg.allowGroupCall,
+              dailyLimitMin: nextCfg.dailyLimitMin
+            }));
+            return;
+          }
         }
         if (handleScreenHttp && await handleScreenHttp(req, res)) return;
         res.writeHead(404);

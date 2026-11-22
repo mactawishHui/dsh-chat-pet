@@ -35,16 +35,18 @@ flowchart LR
     E1["20ms RMS 动态底噪 VAD<br/>300ms 预录防吞字 · 智能断句 · 补话合并"]
     E2["按需流式 ASR<br/>Paraformer Realtime v2 (仅说话期建连)"]
     E3["零工具轻量大脑<br/>DeepSeek Flash (off) + 本地 0ms 梗库 + 时间校准"]
+    E3S["异步旁路工具 (<0.2ms 路由)<br/>天气 / 实时查梗 / 联网检索 / 记备忘 (180ms 快慢双通道)"]
     E4["整句 SSE 流式 TTS<br/>Qwen-Audio-TTS (首包 ~280ms) + 拟人风格指令"]
     E5["1x 实时节拍器<br/>80ms 预充水库 · 漂移补偿 · 5ms 淡入淡出"]
   end
 
   subgraph Host["宿主记忆与状态（如 qq-bridge）"]
-    H1["GET /api/call/context<br/>拉取人设/印象/近期聊天/热点"]
-    H2["POST /api/call/summary<br/>写回通话摘要与新事实"]
+    H1["GET /api/call/context<br/>拉取人设/印象/近期聊天/热点天气"]
+    H2["POST /api/call/summary & /api/call/note<br/>写回通话摘要、新事实与即时备忘"]
   end
 
   A1 -->|"pushPcm16k(buf)"| E1 --> E2 --> E3 --> E4 --> E5
+  E2 -.->|"并行触发"| E3S -.->|"180ms 内直入 / 完成后静默播报"| E3
   E5 -->|"onAudioOut(pcm24k)"| A2
   E1 -.->|"打断: onClearOut()"| A2
   E3 -.->|"道别/超时: onHangupRequest()"| A3
@@ -59,17 +61,19 @@ flowchart LR
 | [`templates/call-engine.mjs`](./templates/call-engine.mjs) | 平台无关全双工通话内核（VAD / 按需 ASR / 轻量大脑 / SSE TTS / 1x 节拍器 / 打断截断 / 摘要写回） | **零耦合**（可接入任意宿主） |
 | [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs) | QQ 原生语音通话守护进程（PulseAudio 虚拟声卡管理、X11 来电检测、双层白名单校验、音频桥接、`127.0.0.1:3300/health`） | 仅适配 LinuxQQ + Docker 容器 |
 
-### 宿主对接极简契约（接入任何新平台只需实现 5 个回调）
+### 宿主对接极简契约（接入任何新平台只需实现 5+1 个回调）
 
 ```js
 const engine = new RealtimeCallEngine({
   callerId: '<USER_ID>',
   callerName: '<USER_NAME>',
+  defaultCity: '<OPTIONAL_CITY>',
   onAudioOut: (pcm24kBuf) => { /* 写入你的播放器 / WebSocket / WebRTC / 虚拟麦 */ },
   onClearOut: () => { /* 写入 40~80ms 静音或清空客户端播放缓冲 */ },
   onHangupRequest: (reason) => { /* 执行挂断 */ },
   getContext: async (callerId) => ({ impression, recentMessages, dailyFeedText }),
-  onSummary: async (report) => { /* 把 report.summary 与 report.facts 写回宿主记忆 */ }
+  onSummary: async (report) => { /* 把 report.summary 与 report.facts 写回宿主记忆 */ },
+  onSidecarTask: async (task) => { /* 可选异步旁路：remember / weather / meme / web_search，返回简短文本 */ }
 });
 
 await engine.start();

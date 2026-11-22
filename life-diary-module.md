@@ -8,32 +8,35 @@
 
 ## 1. 体验标准
 
-1. **有外部输入**：每天两次「闲逛时间」（14:00、19:30 起随机 90 分钟内），她自己挑感兴趣的热点、新片或梗去 B 站搜视频、看字幕，或联网查来龙去脉，记下真实标题、细节和自己的感受。
-2. **有全景记忆**：写日记时不只读探索流水账，而是自动汇总当天全部 6 类信息源——**自主探索、新解锁本事/成长里程碑、实时语音电话、新学到的梗、QQ 聊天分幕摘录（自动脱敏）、长期记忆与过往说说时间线**。
-3. **有心情和感想**：主角永远是她自己，但不做报菜名式的流水账；挑 2–3 件今天真正在心里留下涟漪的事，把事件细节和自己的真实反应、暗爽、嘴硬心软、小得意或成长反差揉在一起写（140–340 字）。
-4. **有底线**：每天最多 1 条说说（含聊天中临时发的），默认仅好友可见（`ugc_right=4`）；自动屏蔽真实昵称、长数字、医疗/家庭/收入/住址等隐私；发布前做去 AI 味、防重复和隐私审查，不合格重写 1 次，仍不合格当天就不发。
-5. **有归档**：日记、流水账与成长里程碑自动同步到私有 vault，生成 `DIARY.md`、`memory/life-journal.jsonl` 和 `memory/milestones.json`。
+1. **多渠道外部输入**：每天两次「闲逛时间」（14:00、19:30 起随机 90 分钟内），在 B 站、豆瓣书影音、知乎/豆瓣社区热议、科技与播客之间自由探索，并感知二十四节气与所在城市天气；遇到真正好玩的宝藏内容时可严格限频（每日 ≤ 1 条、仅白天不打扰）顺手安利给常聊朋友。
+2. **8 路全景记忆 + 回忆杀**：写日记时自动汇总当天全部 8 类信息源——**自主探索、新解锁本事/成长里程碑、实时语音电话、新学到的梗、QQ 聊天分幕摘录（自动脱敏）、长期印象与过往说说、节气与城市天气、以及那年/那月今日的回忆杀与纪念日**。
+3. **活人感重吐槽 + 碎碎念 + 手绘手账配图**：通过 `diary-examples.json` 风格锚点库破除 AI 散文腔与段尾点题，长短随当天心情浮动（80–300 字）；并根据当天氛围自动切换涂鸦（`doodle`）或日式水彩彩铅手账风（`journal` / `watercolor`），为正文配 **1–2 张**专属手绘插画。
+4. **睡眠海马体记忆整理**：每晚写完日记自动执行记忆代谢——去重合并碎片印象、强制补齐 `[YYYY-MM-DD]` 日期锚点、把已过期的临时约定移出活跃区并永久归档至 `state/memory-archive.jsonl`，通过桥接热更新接口写回内存态，彻底消灭记忆重复与跨天乌龙。
+5. **底线与云端归档**：每天最多 1 条说说，默认仅好友可见（`ugc_right=4`）；代码侧强制执行去 AI 味、禁「对方」、防重复、隐私与第一人称重心审查；日记图文手账、流水账、里程碑与归档记忆自动同步到私有 vault（`DIARY.md`、`DRAWINGS.md`、`memory/milestones.json`、`memory/memory-archive.jsonl`）。
 
 ## 2. 架构
 
 ```mermaid
 flowchart LR
-  subgraph Input["全景输入（今天接触到的一切）"]
-    E["闲逛探索<br/>qq-life.mjs explore<br/>(qq-life 预设：仅 B站/安全搜索)"]
-    S["热点 / 新梗库<br/>surf-kb.mjs & meme-kb.json"]
+  subgraph Input["8 路全景输入（今天接触到的一切）"]
+    E["多渠道闲逛探索<br/>qq-life.mjs explore<br/>(B站/豆瓣/社区/播客 + 限频安利)"]
+    S["热点 / 新梗 / 节气天气<br/>surf-kb.mjs & weather-solar.mjs"]
     C["QQ 聊天分幕摘录 + 长期印象<br/>social-v2.json（自动匿名脱敏）"]
     VCall["实时语音电话<br/>call-stats.json & 通话摘要"]
-    M["新解锁能力 / 成长里程碑<br/>milestones.json（自动探测 + 手动记）"]
-    H["过往说说时间线<br/>QQ 空间最近 15 条"]
+    M["成长里程碑 + 回忆杀纪念日<br/>milestones.json & collectFlashbacks"]
+    H["过往说说时间线<br/>QQ 空间最近 30 条"]
   end
   J["见闻流水账<br/>state/life-journal.jsonl"]
-  D["全景日记生成<br/>qq-life.mjs diary<br/>(qq-diary 零工具预设)"]
-  R["审查：字数 / 鸡汤套话 / 意象限频 /<br/>开头去重 / 隐私 / 第一人称重心"]
-  Q["QQ 空间说说（仅好友可见）"]
-  V["私有 vault：DIARY.md + milestones.json"]
+  EX["活人感重吐槽风格锚点<br/>diary-examples.json"]
+  D["全景日记 + 插画规划<br/>qq-life.mjs diary (qq-diary 预设)"]
+  R["代码侧强制审查<br/>字数/禁词/隐私/意象/重心"]
+  ART["动态手绘配图 1~2 张<br/>/draw (doodle / journal / watercolor)"]
+  Q["QQ 空间图文手账说说<br/>(仅好友可见 ugc_right=4)"]
+  MEM["睡眠海马体整理<br/>memory-consolidator.mjs<br/>去重/日期锚定/过期归档"]
+  V["私有 vault<br/>DIARY.md + DRAWINGS.md + memory/*"]
   E --> J
-  J & S & C & VCall & M & H --> D --> R --> Q
-  R --> V
+  J & S & C & VCall & M & H & EX --> D --> R --> ART --> Q
+  Q --> MEM --> V
 ```
 
 两个独立 DSH 会话（`qq-life` / `qq-diary`）都**不在任何聊天会话里唤醒**，既能读取全景素材，又不会被某一条聊天上下文带偏。
@@ -97,11 +100,31 @@ flowchart LR
 - 原来「20–36 小时唤醒一次去发说说」改为「3–6 小时检查一次评论数」：只有出现新评论时才唤醒她去回评论，不在聊天会话里发新说说。
 
 ## 4. 部署步骤（新环境）
-1. 复制 `life-journal.mjs`、`qq-life.mjs`、`diary-examples.json`、`sync-vault.mjs` 到宿主 `src/`；`qq-life-tools.mjs` 放到 preset bundle 目录（与 `qq-tool-restrict.mjs` 同级）。
-2. 新建 `qq-life`、`qq-diary` 两个 preset（`preset.yml` + `agent.cordis.yml`），注册到 preset 构建脚本和 bundle 的 `package.json`，重新生成 patch 并重启 DSH。
-3. 在 `surf-kb.mjs`、`bridge.js` 的画画 / 唱歌 / 通话摘要处加 `appendJournal` 钩子（通话摘要同时写入 `time` 与 `at`）；新增 `/api/socialV2/journal-note` 路由和 `qq_journal_note` MCP 工具。
-4. 在 `config.json` 中加入 `life` 配置块：模型（默认 `deepseek-flash` / `low`）、角色卡路径、`examplesFile`（默认 `src/diary-examples.json`）、`diaryUgcRight: 4`、`minJournalEntries: 2`、`exploreMaxToolCalls: 8`、`drawChance: 0.35`。
-5. 安装 systemd 单元：`qq-life-explore.timer`（14:00 / 19:30，`RandomizedDelaySec=5400`）和 `qq-diary.timer`（22:30，`RandomizedDelaySec=9000`，`ExecStartPost` 触发 vault 同步）。
+1. 复制 `life-journal.mjs`、`qq-life.mjs`、`diary-examples.json`、`memory-consolidator.mjs`、`weather-solar.mjs`、`sync-vault.mjs` 到宿主 `src/`；`qq-life-tools.mjs` 放到 preset bundle 目录（与 `qq-tool-restrict.mjs` 同级）。
+2. 在文生图服务（`/opt/qq-tts/service.mjs` 的 `DRAW_STYLES`）中增加 `journal`（日式手账水彩淡彩插画）画风，与已有的 `doodle` / `watercolor` / `pencil` / `sketch` 配合使用。
+3. 新建 `qq-life`、`qq-diary` 两个 preset（`preset.yml` + `agent.cordis.yml`），注册到 preset 构建脚本和 bundle 的 `package.json`，重新生成 patch 并重启 DSH。
+4. 在 `surf-kb.mjs`、`bridge.js` 的画画 / 唱歌 / 通话摘要处加 `appendJournal` 钩子（通话摘要同时写入 `time` 与 `at`）；在 `bridge.js` 新增 4 个本机鉴权路由：
+   - `POST /api/socialV2/journal-note`（配合 `qq_journal_note` MCP 工具）
+   - `POST /api/socialV2/consolidate`（海马体记忆整理热写回内存态）
+   - `POST /api/socialV2/proactive-share`（闲逛宝藏限频安利并记录进会话）
+   - `POST /api/call/note`（通话异步旁路备忘写入）
+5. 在宿主本地 `config.json` 中加入 `life` 配置块（城市名仅存在本地配置，不进公开仓库）：
+   ```json
+   "life": {
+     "model": { "provider": "deepseek-account", "model": "deepseek-flash", "reasoningEffort": "low" },
+     "roleCardFile": "/opt/qq-bridge/roles/<ROLE>.md",
+     "examplesFile": "/opt/qq-bridge/src/diary-examples.json",
+     "weatherCity": "<YOUR_CITY_OPTIONAL>",
+     "diaryUgcRight": 4,
+     "minJournalEntries": 2,
+     "exploreMaxToolCalls": 8,
+     "drawChance": 0.35,
+     "diaryDrawChance": 0.9,
+     "diaryMaxDrawImages": 2,
+     "proactiveShareEnabled": true
+   }
+   ```
+6. 安装 systemd 单元：`qq-life-explore.timer`（14:00 / 19:30，`RandomizedDelaySec=5400`）和 `qq-diary.timer`（22:30，`RandomizedDelaySec=9000`），其中 `qq-diary.service` 依次执行 `qq-life.mjs diary` → `ExecStartPost` 跑 `memory-consolidator.mjs` → `ExecStartPost` 跑 `sync-vault.mjs`。
 
 ## 5. 常用命令与验收
 ```bash

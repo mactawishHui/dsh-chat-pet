@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { serperGoogleSearch } from './reverse-image.mjs';
 import { appendJournal } from './life-journal.mjs';
 import { getWeatherAndSolarHint } from './weather-solar.mjs';
+import { matchMemesInKb } from './meme-matcher.mjs';
 
 function journalMeme(entry, how) {
   appendJournal({
@@ -642,10 +643,12 @@ async function callDashScopeNativeSearchJson(systemPrompt, userPrompt, { maxToke
   }
 }
 
-async function lookupMemeViaWebSearch(query) {
+async function lookupMemeViaWebSearch(query, context = '') {
+  const ctxClean = String(context || '').trim().slice(0, 120);
   let googleSnippets = '';
   try {
-    const sp = await serperGoogleSearch(`${query} 是什么梗 出处`, { num: 6 });
+    const searchQ = ctxClean ? `${query} ${ctxClean.slice(0, 30)} 是什么梗 出处` : `${query} 是什么梗 出处`;
+    const sp = await serperGoogleSearch(searchQ, { num: 6 });
     if (Array.isArray(sp) && sp.length) {
       googleSnippets = sp.map((x, i) => `${i + 1}. ${x.title}\n   ${x.snippet}`).join('\n');
     }
@@ -655,11 +658,12 @@ async function lookupMemeViaWebSearch(query) {
 
   const sys = [
     '你是中文互联网网络热梗（B站/抖音/三国杀/ACG/空耳/游戏圈等）核查解析器。',
+    '若查询词来自语音通话或手误打字，可能包含同音/近音错字（如「哲学」误识成「德学」、「哈基米」写成「哈吉米」），可结合对话上下文与读音先还原真实梗名再结合搜索结果核实；但绝不能胡编不存在的梗。',
     '必须基于搜索结果与准确已知事实作答，严禁胡编或把毫不相干的词条硬拼接进来！',
     '如果确实不知道该梗的确切出处，或搜索结果都毫不相干，必须返回 {"found": false}，绝不瞎编。',
     '若确切知道/查到出处，严格只输出 JSON 对象：',
     '- found: true',
-    '- name: 字符串（最常用的梗名）',
+    '- name: 字符串（最常用的标准梗名）',
     '- aliases: 字符串数组（常见别名/空耳原文/完整台词，最多 4 个）',
     '- origin: 字符串（具体准确出处：作品/游戏/宣传片/原句或空耳来源，≤80字）',
     '- meaning: 字符串（核心笑点/表达的情绪含义，≤75字）',
@@ -669,10 +673,11 @@ async function lookupMemeViaWebSearch(query) {
     '- searchKeywords: 字符串数组（用于搜对应表情包的 1~2 个精准短词，必须是该梗本身或对应角色，不要拆成无关字面词）'
   ].join('\n');
 
+  const ctxLine = ctxClean ? `\n对话上下文（辅助同音纠偏）：${ctxClean}` : '';
   if (googleSnippets) {
     const parsed = await callDashScopeJson(
       sys,
-      `要核查的网络梗：「${query}」\n\nGoogle 实时搜索结果：\n${googleSnippets}\n\n请基于以上真实搜索结果提炼 JSON（若搜索结果完全无关则返回 {"found": false}）。`,
+      `要核查的网络梗：「${query}」${ctxLine}\n\nGoogle 实时搜索结果：\n${googleSnippets}\n\n请基于以上真实搜索结果提炼 JSON（若搜索结果完全无关则返回 {"found": false}）。`,
       { maxTokens: 700, timeoutMs: 22000 }
     );
     if (parsed && parsed.found === true && parsed.name && parsed.meaning) return parsed;
@@ -680,7 +685,7 @@ async function lookupMemeViaWebSearch(query) {
 
   const res = await callDashScopeNativeSearchJson(
     sys,
-    `请核查并解析网络梗「${query}」的确切出处、含义、接梗下句与玩梗方式。不确定就返回 {"found": false}。`,
+    `请核查并解析网络梗「${query}」${ctxLine ? `（上下文：${ctxClean}）` : ''}的确切出处、含义、接梗下句与玩梗方式。不确定就返回 {"found": false}。`,
     { maxTokens: 700, timeoutMs: 28000 }
   );
   const parsed = res?.parsed;
@@ -945,27 +950,7 @@ export function formatDailyFeedHint() {
   return lines.join('\n');
 }
 
-function scoreMemeMatch(m, qLower) {
-  let s = 0;
-  const name = String(m.name || '').toLowerCase();
-  const wiki = String(m.wikiTitle || '').toLowerCase();
-  if (m.id === qLower || name === qLower || wiki === qLower) s += 100;
-  else if (name.includes(qLower) || qLower.includes(name)) s += 50;
-  for (const a of (m.aliases || [])) {
-    const al = String(a || '').toLowerCase();
-    if (al === qLower) s += 80;
-    else if (al.includes(qLower) || qLower.includes(al)) s += 35;
-  }
-  for (const t of [...(m.mood || []), ...(m.imageTags || []), ...(m.searchKeywords || [])]) {
-    const tl = String(t || '').toLowerCase();
-    if (tl && (tl.includes(qLower) || qLower.includes(tl))) s += 20;
-  }
-  const text = `${m.origin || ''} ${m.meaning || ''} ${m.usage || ''} ${m.imageTitle || ''}`.toLowerCase();
-  if (text.includes(qLower)) s += 12;
-  return s;
-}
-
-export async function lookupMeme(query, { allowLive = true, fetchImage = true, log = () => {} } = {}) {
+export async function lookupMeme(query, { allowLive = true, fetchImage = true, context = '', log = () => {} } = {}) {
   const q = String(query || '').trim();
   const kb = loadMemeKb();
   if (!q) {
@@ -975,13 +960,11 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
       items: kb.memes.slice(-10).reverse().map(presentMeme)
     };
   }
-  const qLower = q.toLowerCase();
-  const scored = kb.memes
-    .map((m) => ({ m, score: scoreMemeMatch(m, qLower) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score);
+  // 第 1 层：零依赖拼音 + 近音空耳 + 精确多维度本地匹配（文字聊天与语音通话共用）
+  const matched = matchMemesInKb(kb.memes, q, { strictForLongUtterance: false, minScore: 1 });
+  const scored = matched.map((x) => ({ m: x.meme, score: x.score, matchType: x.matchType }));
 
-  if (scored.length && scored[0].score >= 35) {
+  if (scored.length && scored[0].score >= 52) {
     const top = scored[0].m;
     if (fetchImage && (!top.imageFile || !fs.existsSync(top.imageFile))) {
       const img = await fetchAndSaveMemeImage(top.name, top.searchKeywords || [q]);
@@ -991,7 +974,7 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
       }
     }
     return {
-      source: 'local',
+      source: scored[0].matchType === 'fuzzy_pinyin' || scored[0].matchType === 'pinyin' ? 'local-phonetic' : 'local',
       total: kb.memes.length,
       items: scored.slice(0, 5).map((x) => presentMeme(x.m))
     };
@@ -1070,8 +1053,8 @@ export async function lookupMeme(query, { allowLive = true, fetchImage = true, l
     return { source: 'bilibili-live', total: kb.memes.length, items: [presentMeme(entry)] };
   }
 
-  // 第 4 层：百炼原生中文全网搜索兜底 + MemeCub 配图入库
-  const webInfo = await lookupMemeViaWebSearch(q);
+  // 第 4 层：Serper + 百炼原生中文全网搜索兜底（带上下文同音纠偏！）+ MemeCub 配图入库
+  const webInfo = await lookupMemeViaWebSearch(q, context);
   if (webInfo) {
     const img = fetchImage ? await fetchAndSaveMemeImage(webInfo.name || q, [q, ...(webInfo.searchKeywords || [])]) : null;
     const entry = {

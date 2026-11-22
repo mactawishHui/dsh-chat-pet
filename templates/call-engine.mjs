@@ -14,6 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
 import { detectScreenModeCommand, detectScreenAudioCommand } from './screen-vision-engine.mjs';
+import { lookupLocalMemeFast } from './meme-matcher.mjs';
 
 const FRAME_SAMPLES_16K = 320; // 20ms @ 16kHz
 const FRAME_BYTES_16K = FRAME_SAMPLES_16K * 2; // 640 bytes
@@ -74,6 +75,8 @@ function calcRms(buf) {
 function cleanSpokenText(raw) {
   let s = String(raw || '');
   s = s.replace(/\[(?:HANGUP|SILENT)\]/gi, '');
+  // 剥离大脑自发隐形工具标签（[LOOKUP:...] / [SEARCH:...] / [SING:...]），绝不念出来
+  s = s.replace(/\[(?:LOOKUP|SEARCH|SING)\s*:[^\]]*\]/gi, '');
   // 剥离模型偶发幻觉吐出的裸 XML/JSON 工具调用标签，避免 TTS 把代码念出来
   s = s.replace(/<(?:tool_?call|search|function|invoke|call|thought|think)[\s\S]*$/i, '');
   s = s.replace(/\{[\s\S]*"(?:keyword|query|url|command)"[\s\S]*\}\s*$/i, '');
@@ -83,6 +86,81 @@ function cleanSpokenText(raw) {
   s = s.replace(/[（(][^）)]{0,16}[）)]/g, ''); // 去掉（笑）（叹气）等舞台动作
   s = s.replace(/\s+/g, ' ').trim();
   return s;
+}
+
+/**
+ * 解析通话大脑在回复末尾附带的隐形自发工具标记（零延迟软工具调用）：
+ *   [LOOKUP:关键词]         -> 4层查梗（带近期对话上下文做同音纠偏）
+ *   [SEARCH:关键词]         -> 联网事实检索
+ *   [SING:mode|歌名|歌手]   -> 异步活人点歌翻唱 / 原创哼唱（命中曲库缓存则 0 秒开唱）
+ */
+export function parseBrainSidecarTag(rawReply, recentContext = '') {
+  const s = String(rawReply || '');
+  const mSing = s.match(/\[SING\s*:\s*([^\]]+)\]/i);
+  if (mSing) {
+    const parts = mSing[1].split(/[|｜/]/).map((x) => x.trim());
+    let mode = 'bedroom_bgm';
+    let song = '';
+    let artist = '';
+    if (parts.length >= 2 && /^(acappella|bedroom_bgm|ktv|清唱|伴奏|外放)$/i.test(parts[0])) {
+      const m0 = parts[0].toLowerCase();
+      mode = (m0 === 'acappella' || m0 === '清唱') ? 'acappella' : (m0 === 'ktv' ? 'ktv' : 'bedroom_bgm');
+      song = parts[1] || '';
+      artist = parts[2] || '';
+    } else {
+      song = parts[0] || '';
+      artist = parts[1] || '';
+    }
+    song = song.replace(/[《》"'【】]/g, '').trim();
+    artist = artist.replace(/[《》"'【】]/g, '').trim();
+    const isOriginal = !song || /^(原创|随便|即兴|新歌|自己编)$/i.test(song);
+    return {
+      kind: 'sing',
+      mode,
+      song: isOriginal ? '' : song,
+      artist: isOriginal ? '' : artist,
+      isOriginal,
+      query: isOriginal ? '原创哼唱' : `${artist ? artist + ' ' : ''}${song}`,
+      label: isOriginal ? '原创哼唱' : `唱《${song}》`,
+      fromBrain: true,
+    };
+  }
+  const mLookup = s.match(/\[LOOKUP\s*:\s*([^\]]+)\]/i);
+  if (mLookup) {
+    const q = mLookup[1].trim().slice(0, 32);
+    if (q.length >= 2) {
+      return { kind: 'meme', query: q, context: recentContext, label: `查梗「${q}」`, fromBrain: true };
+    }
+  }
+  const mSearch = s.match(/\[SEARCH\s*:\s*([^\]]+)\]/i);
+  if (mSearch) {
+    const q = mSearch[1].trim().slice(0, 48);
+    if (q.length >= 2) {
+      return { kind: 'web_search', query: q, label: `查「${q.slice(0, 14)}」`, fromBrain: true };
+    }
+  }
+  return null;
+}
+
+/**
+ * 读取 24kHz 单声道 PCM16 WAV 文件的纯音频 data 负载（精准扫描 'data' chunk，兼容各类 WAV 头）
+ */
+function readWavPcm24k(filePath) {
+  const buf = fs.readFileSync(filePath);
+  if (buf.length < 44) return Buffer.alloc(0);
+  if (buf.toString('ascii', 0, 4) !== 'RIFF') return buf;
+  let pos = 12;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString('ascii', pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    if (id === 'data') {
+      const start = pos + 8;
+      const end = (size > 0 && start + size <= buf.length) ? start + size : buf.length;
+      return buf.subarray(start, end);
+    }
+    pos += 8 + size + (size % 2);
+  }
+  return buf.subarray(44);
 }
 
 function splitSpokenClauses(text) {
@@ -111,51 +189,14 @@ function splitSpokenClauses(text) {
   return clauses;
 }
 
-/**
- * 本地 0ms 梗库快速匹配：若通话中对方抛出已知热梗，直接给大脑注入接梗下句。
- */
-function lookupLocalMemeSync(utterance, memeKbPath) {
-  const q = String(utterance || '').replace(/[。！？!?，,、\s]/g, '').toLowerCase();
-  if (!q || q.length < 2) return null;
-  try {
-    const kb = JSON.parse(fs.readFileSync(memeKbPath, 'utf8'));
-    const memes = Array.isArray(kb?.memes) ? kb.memes : [];
-    let best = null;
-    let bestScore = 0;
-    for (const m of memes) {
-      const candidates = [m.name, ...(Array.isArray(m.aliases) ? m.aliases : [])]
-        .map((x) => String(x || '').replace(/[。！？!?，,、\s]/g, '').toLowerCase())
-        .filter((x) => x.length >= 2);
-      for (const c of candidates) {
-        let s = 0;
-        if (q === c) s = 100;
-        else if (q.includes(c) && c.length >= 3) s = 75;
-        else if (c.includes(q) && q.length >= 3) s = 60;
-        if (s > bestScore) {
-          bestScore = s;
-          best = m;
-        }
-      }
-    }
-    if (best && bestScore >= 60) {
-      return {
-        name: best.name,
-        meaning: best.meaning || '',
-        replies: Array.isArray(best.replies) ? best.replies.slice(0, 4) : []
-      };
-    }
-  } catch {
-    // ignore missing kb
-  }
-  return null;
-}
-
 const KNOWN_CITIES_RE = /(北京|上海|广州|深圳|杭州|成都|重庆|武汉|西安|南京|天津|苏州|长沙|郑州|沈阳|大连|青岛|济南|厦门|福州|合肥|昆明|哈尔滨|长春|太原|大同|石家庄|南昌|贵阳|南宁|海口|兰州|银川|西宁|拉萨|乌鲁木齐|呼和浩特|无锡|宁波|佛山|东莞|珠海|温州|香港|澳门|台北)/;
+
+const NON_MEME_QUIZ_RE = /^(我|你|他|她|它|这|那|这个|那个|这里|那里|今天|明天|昨天|现在|时间|几点|天气|下雨|怎么|为啥|为什么|干嘛|是谁|在哪|哪里|吃饭|吃啥|睡觉|屏幕|画面|声音|视频|电影|歌|音乐|唱歌|吗|啊|呢|吧)$/;
 
 /**
  * 极速（<0.2ms）通话异步旁路意图检测：在不拖慢主对话 0ms 的前提下识别是否需要后台查工具或记备忘。
  */
-export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = false } = {}) {
+export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = false, recentContext = '' } = {}) {
   const t = String(utterance || '').trim();
   if (!t || t.length < 4) return null;
 
@@ -179,7 +220,7 @@ export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = 
     return { kind: 'web_search', query: t, label: '查天气', rawText: t };
   }
 
-  // 3. 查梗（仅当本地 0ms 梗库未命中时才走后台实时查梗）
+  // 3. 查梗（显式问梗 OR 口语考梗「你知道 XXX 吗 / 听过 XXX 吗」，仅当本地 0ms 拼音梗库未命中时并发触发）
   if (!localMemeHit && /(什么梗|啥梗|啥意思|什么意思|查一下.*梗|搜一下.*梗)/.test(t)) {
     const q = t
       .replace(/^(?:诶|哎|那个|这个|刚才说的|你说的|帮我|你)+/g, '')
@@ -187,7 +228,24 @@ export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = 
       .replace(/(?:到底)?(?:是)?(?:什么梗|啥梗|什么意思|啥意思)[呀啊吗呢？?。！!]*/g, '')
       .trim();
     if (q.length >= 2 && q.length <= 24) {
-      return { kind: 'meme', query: q, label: `查梗「${q}」`, rawText: t };
+      return { kind: 'meme', query: q, context: recentContext, label: `查梗「${q}」`, rawText: t };
+    }
+  }
+  if (!localMemeHit) {
+    const quizM = t.match(/(?:你)?(?:知道|听过|听说过|懂不懂|认不认识)(?:那个|这个|啥叫|什么叫)?[\s，,。]*([^\s，,。？！?!]{2,16}?)(?:这个梗|那个梗|梗)?(?:吗|嘛|么|不|呀|啊|呢)?[？?。！!\s]*$/);
+    if (quizM) {
+      const q = quizM[1]
+        .replace(/^(?:那个|这个|一个|就是|叫)/g, '')
+        .replace(/(?:吗|嘛|么|了|呢|呀|啊)+$/g, '')
+        .trim();
+      if (
+        q.length >= 2 &&
+        q.length <= 16 &&
+        !NON_MEME_QUIZ_RE.test(q) &&
+        !/(看|屏幕|画面|声音|视频|天气|吃饭|几点|时间|怎么|为啥|为什么|在哪|哪里|多少|多久|什么时候|谁)/.test(q)
+      ) {
+        return { kind: 'meme', query: q, context: recentContext, label: `查梗「${q}」`, rawText: t };
+      }
     }
   }
 
@@ -460,9 +518,12 @@ export class RealtimeCallEngine {
     this.screenEngine = opts.screenEngine || null;
     this.log = opts.log || console.log;
 
-    // 异步旁路工具状态（绝不阻塞主通话延迟）
+    // 异步旁路工具状态（绝不阻塞主通话延迟；唱歌独立序号，避免中途聊梗/查天气打断后台录歌）
     this._pendingSidecarNotes = [];
     this._sidecarSeq = 0;
+    this._singSeq = 0;
+    this._playingSongLabel = '';
+    this._lastTurnSidecarKind = '';
 
     // 视觉上下文防滚雪球：单会话累计发满 12 张看屏图后，安静间隙自动无感换新轻量会话（保留近期文字前情、甩掉老图 Token）
     this.maxSessionImages = Number(opts.maxSessionImages ?? 12);
@@ -641,6 +702,10 @@ export class RealtimeCallEngine {
       if (!this.active || this._ending) return;
       if (this._playQueueBytes <= 0) {
         this._pacerActive = false;
+        if (this._playingSongLabel) {
+          this._playingSongLabel = '';
+          this._lastActivityAt = Date.now();
+        }
         return;
       }
       const now = performance.now();
@@ -707,7 +772,11 @@ export class RealtimeCallEngine {
 
   _formatContextPrimer(ctx) {
     const parts = [
-      `【当前准确时间】${formatBeijingNow()}（北京时间）\n⚠️ 时间校准铁律：下面「长期印象」里记录的多为历史信息，遇到任何日期（如生日、哪周去哪）务必先对照上面的当前日期——已经过去的事绝对不要当成“今天”或“快到了”来提！优先关注下面「最近 QQ 聊天」里的最新近况。`
+      `【当前准确时间】${formatBeijingNow()}（北京时间）\n⚠️ 时间校准铁律：下面「长期印象」里记录的多为历史信息，遇到任何日期（如生日、哪周去哪）务必先对照上面的当前日期——已经过去的事绝对不要当成“今天”或“快到了”来提！优先关注下面「最近 QQ 聊天」里的最新近况。`,
+      `【隐形小工具（仅在确实需要时悄悄附在回复最末尾，系统会自动剥离绝不念出；平时闲聊不要乱加）】
+- 对方抛了你拿不准的网络梗、英文缩写、动漫/游戏黑话，或听起来像路边语音识别听岔的同音错字（如“哲学”听成“德学”）：别干巴巴只回“不知道”！先自然说一句过渡（如“诶等等你说的那个我卡壳了，瞄一眼手机哈”），末尾附 [LOOKUP:关键词]（结合上文更好懂时可写两个词，如 [LOOKUP:VAN 德学]）。
+- 对方问到你拿不准的新闻/影视/常识事实：自然过渡一句，末尾附 [SEARCH:关键词]。
+- 对方明确让你现在唱一首歌（不是泛泛问“你会唱歌吗”）：绝对不要问对方要音频或说“没伴奏唱不了”！直接自然答应一句（如“行啊我先找找调/翻下伴奏，咱先聊别的，好了直接唱给你听”），末尾附 [SING:模式|歌名|歌手]（模式填 acappella 清唱 / bedroom_bgm 带伴奏 / ktv 包厢；没提歌手留空；对方要你现编原创歌则歌名填 原创），系统会自动搜原唱伴奏或命中秒唱曲库直接唱出来。`
     ];
     if (ctx?.impression) {
       parts.push(`【你对「${this.callerName}」的长期印象（历史累积，注意核对日期）】\n${ctx.impression}`);
@@ -942,12 +1011,17 @@ export class RealtimeCallEngine {
   _triggerBargeIn(wasAudiblySpeaking) {
     if (wasAudiblySpeaking) {
       this.log('[call-engine] 检测到对方打断，0ms 清空播放队列并取消在途生成');
-      const full = cleanSpokenText(this._currentReplyText);
-      if (full && this._totalQueuedBytesThisTurn > 0) {
-        const ratio = Math.min(1, Math.max(0.1, this._playedBytesThisTurn / this._totalQueuedBytesThisTurn));
-        const cutLen = Math.max(2, Math.floor(full.length * ratio));
-        const spokenPart = full.slice(0, cutLen);
-        this._lastInterruptedContext = `[提示：你刚才说到“${spokenPart}……”时被对方打断了，直接顺着对方新说的话自然接下去]`;
+      if (this._playingSongLabel) {
+        this._lastInterruptedContext = `[提示：你刚才正在电话里给对方唱${this._playingSongLabel}，唱到一半被对方开口打断了，直接顺着对方的新话自然接下去，别道歉也别硬继续唱]`;
+        this._playingSongLabel = '';
+      } else {
+        const full = cleanSpokenText(this._currentReplyText);
+        if (full && this._totalQueuedBytesThisTurn > 0) {
+          const ratio = Math.min(1, Math.max(0.1, this._playedBytesThisTurn / this._totalQueuedBytesThisTurn));
+          const cutLen = Math.max(2, Math.floor(full.length * ratio));
+          const spokenPart = full.slice(0, cutLen);
+          this._lastInterruptedContext = `[提示：你刚才说到“${spokenPart}……”时被对方打断了，直接顺着对方新说的话自然接下去]`;
+        }
       }
     } else {
       this.log('[call-engine] 对方在回复开口前继续补充，取消在途回合准备合并');
@@ -1007,23 +1081,31 @@ export class RealtimeCallEngine {
     if (this._pendingSidecarNotes.length) {
       notes.push(...this._pendingSidecarNotes.splice(0));
     }
-    const memeHit = lookupLocalMemeSync(text, this.memeKbPath);
+    const recentUserContext = this.transcript
+      .filter((x) => x.role === 'user')
+      .slice(-3)
+      .map((x) => x.text)
+      .join(' | ');
+    const memeHit = lookupLocalMemeFast(text, this.memeKbPath);
     if (memeHit) {
       const reps = memeHit.replies.length ? memeHit.replies.join(' / ') : memeHit.meaning;
-      notes.push(`[本地梗库命中「${memeHit.name}」：接梗下句参考=${reps}（对方是直接抛梗，请直接入戏接梗别科普）]`);
+      this.log(`[call-meme] 本地梗库命中「${memeHit.name}」(${memeHit.matchType}, score=${memeHit.score})`);
+      notes.push(`[本地梗库命中「${memeHit.name}」：含义=${memeHit.meaning}；接梗下句参考=${reps}（对方是直接抛梗，请直接入戏接梗别科普）]`);
     }
 
     // 异步旁路工具：180ms 内完成的直接进本轮回答；超过 180ms 先零延迟过渡，查完后自动静默播报
+    this._lastTurnSidecarKind = '';
     const sidecarTask = this.onSidecarTask
-      ? detectSidecarTask(text, { defaultCity: this.defaultCity, localMemeHit: Boolean(memeHit) })
+      ? detectSidecarTask(text, { defaultCity: this.defaultCity, localMemeHit: Boolean(memeHit), recentContext: recentUserContext })
       : null;
     if (sidecarTask) {
+      this._lastTurnSidecarKind = sidecarTask.kind;
       const scSeq = ++this._sidecarSeq;
       const scStart = Date.now();
       this.log(`[call-sidecar] 触发异步旁路(${sidecarTask.kind}): ${sidecarTask.query}`);
       const scPromise = Promise.resolve()
         .then(() => this.onSidecarTask(sidecarTask))
-        .then((res) => String(res || '').trim())
+        .then((res) => (typeof res === 'string' ? res.trim() : res))
         .catch((err) => {
           this.log(`[call-sidecar] 执行失败(${sidecarTask.kind}): ${err?.message ?? err}`);
           return '';
@@ -1033,15 +1115,21 @@ export class RealtimeCallEngine {
         scPromise,
         new Promise((r) => setTimeout(() => r(null), 180))
       ]);
-      if (fastRes) {
+      if (fastRes && typeof fastRes === 'string') {
         this.log(`[call-sidecar] 即时命中 (${Date.now() - scStart}ms): ${fastRes.slice(0, 80)}`);
         notes.push(`[后台工具已即时完成（${sidecarTask.label}）：${fastRes}（请自然简短地用口语回复结果）]`);
       } else if (fastRes === null) {
         notes.push(`[系统提示：后台正在查「${sidecarTask.label}」，1~2 秒就会回来；现在请先极简自然地过渡一句（如「等等啊我瞄一眼手机」），绝对不要自己瞎编结果]`);
         scPromise.then((lateRes) => {
           if (!lateRes) return;
-          this.log(`[call-sidecar] 后台返回 (${Date.now() - scStart}ms): ${lateRes.slice(0, 100)}`);
-          this._deliverSidecarResult(sidecarTask, lateRes, scSeq);
+          if (typeof lateRes === 'object' && lateRes.type === 'audio' && lateRes.file) {
+            this._deliverSidecarAudio(sidecarTask, lateRes, this._singSeq, Date.now() - scStart);
+            return;
+          }
+          const txt = String(lateRes || '').trim();
+          if (!txt) return;
+          this.log(`[call-sidecar] 后台返回 (${Date.now() - scStart}ms): ${txt.slice(0, 100)}`);
+          this._deliverSidecarResult(sidecarTask, txt, scSeq);
         });
       }
     }
@@ -1143,6 +1231,99 @@ export class RealtimeCallEngine {
     );
   }
 
+  /**
+   * 由大脑回复末尾隐形标记自发拉起的异步旁路（[LOOKUP] / [SEARCH] / [SING]）
+   */
+  _dispatchBrainSidecar(task) {
+    if (!this.active || this._ending || !this.onSidecarTask || !task) return;
+    if (task.kind === this._lastTurnSidecarKind) {
+      this.log(`[call-sidecar] 跳过大脑重复触发(${task.kind}): ${task.query}`);
+      return;
+    }
+    this._lastTurnSidecarKind = task.kind;
+    const scStart = Date.now();
+    if (task.kind === 'sing') {
+      const singSeq = ++this._singSeq;
+      this.log(`[call-sidecar] 🎤 大脑自发点歌(${task.mode}): ${task.query}`);
+      Promise.resolve()
+        .then(() => this.onSidecarTask(task))
+        .then((res) => {
+          if (!res) return;
+          if (typeof res === 'object' && res.type === 'audio' && res.file) {
+            this._deliverSidecarAudio(task, res, singSeq, Date.now() - scStart);
+          } else if (typeof res === 'string' && res.trim()) {
+            this._deliverSidecarResult(task, res.trim(), this._sidecarSeq);
+          }
+        })
+        .catch((err) => {
+          this.log(`[call-sidecar] 点歌失败: ${err?.message ?? err}`);
+        });
+      return;
+    }
+
+    const scSeq = ++this._sidecarSeq;
+    this.log(`[call-sidecar] 🧠 大脑自发旁路(${task.kind}): ${task.query}`);
+    Promise.resolve()
+      .then(() => this.onSidecarTask(task))
+      .then((res) => {
+        const txt = typeof res === 'string' ? res.trim() : '';
+        if (!txt) return;
+        this.log(`[call-sidecar] 大脑自发返回 (${Date.now() - scStart}ms): ${txt.slice(0, 100)}`);
+        this._deliverSidecarResult(task, txt, scSeq);
+      })
+      .catch((err) => {
+        this.log(`[call-sidecar] 大脑自发执行失败(${task.kind}): ${err?.message ?? err}`);
+      });
+  }
+
+  /**
+   * 异步音频旁路（唱歌成品 WAV）就绪后：等当前对话静默空档，顺嘴接一句后直接推流进 1x 节拍器实时唱给对方听（全程支持 0ms 打断）
+   */
+  async _deliverSidecarAudio(task, audioRes, singSeq, elapsedMs = 0) {
+    if (!this.active || this._ending || !audioRes?.file || !fs.existsSync(audioRes.file)) return;
+    const songLabel = task.song ? `《${task.song}》` : '这首歌';
+    this.log(`[call-sidecar] 🎤 音频就绪 ${songLabel} (${audioRes.cached ? '0s曲库秒唱' : `${(elapsedMs / 1000).toFixed(1)}s`})，等待对话空档开唱…`);
+
+    // 耐心等当前语音说完且对方没在讲话（最多等 90 秒，绝不抢话）
+    const deadline = Date.now() + 90000;
+    while (this.active && !this._ending && Date.now() < deadline) {
+      if (singSeq !== this._singSeq) return; // 已发起新歌
+      const quiet = !this._inSpeech && !this._aiThinking && this._playQueueBytes <= PCM24K_BYTES_PER_MS * 180;
+      if (quiet) {
+        // 多确认 350ms 避免刚说完一个字就插进去
+        await new Promise((r) => setTimeout(r, 350));
+        if (!this._inSpeech && !this._aiThinking && this._playQueueBytes <= PCM24K_BYTES_PER_MS * 180) break;
+      }
+      await new Promise((r) => setTimeout(r, 220));
+    }
+    if (!this.active || this._ending || singSeq !== this._singSeq || this._inSpeech || this._aiThinking) return;
+
+    let pcm;
+    try {
+      pcm = readWavPcm24k(audioRes.file);
+    } catch (err) {
+      this.log(`[call-sidecar] 读取唱歌 WAV 失败: ${err?.message ?? err}`);
+      return;
+    }
+    if (!pcm || pcm.length < PCM24K_BYTES_PER_MS * 500) return;
+
+    // 后台渲染耗时超过 6 秒时先自然说一句提示再开唱；秒唱缓存刚答应完直接开唱！
+    if (!audioRes.cached && elapsedMs > 6000) {
+      await this._speakTextDirect(`诶，刚答应唱的那首${songLabel}准备好了，听着哈。`);
+      if (!this.active || this._ending || this._inSpeech || singSeq !== this._singSeq) return;
+      this._enqueueAudioOut(Buffer.alloc(PCM24K_BYTES_PER_MS * 260));
+    } else {
+      this._enqueueAudioOut(Buffer.alloc(PCM24K_BYTES_PER_MS * 220));
+    }
+
+    this._playingSongLabel = songLabel;
+    this._aiHasSpokenThisTurn = true;
+    this._lastActivityAt = Date.now();
+    this.transcript.push({ role: 'assistant', text: `[在电话里唱了一段${songLabel}]`, ts: Date.now() });
+    this._enqueueAudioOut(pcm);
+    this.log(`[call-sidecar] 🎶 正在电话里播放${songLabel} (${(pcm.length / PCM24K_BYTES_PER_MS / 1000).toFixed(1)}s，随时开口可 0ms 打断)`);
+  }
+
   async _runAiTurn(promptText, { isGreeting = false, vadEndAt = Date.now(), asrMs = 0, userUtterance = '', imageParts = [], silentIfToken = false, isWatchAlong = false } = {}) {
     // 严格串行：启动新回合前先取消任何残留的旧回合与播放队列，杜绝双声音重叠
     if (this._turnAc) {
@@ -1217,6 +1398,11 @@ export class RealtimeCallEngine {
       }
 
       const wantHangup = !isWatchAlong && (/\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && AI_GOODBYE_RE.test(cleanSpokenText(fullReply))));
+      const recentCtx = this.transcript.filter((x) => x.role === 'user').slice(-3).map((x) => x.text).join(' | ');
+      const brainSidecar = !isGreeting && !isWatchAlong ? parseBrainSidecarTag(fullReply, recentCtx) : null;
+      if (brainSidecar) {
+        this._dispatchBrainSidecar(brainSidecar);
+      }
       const spoken = cleanSpokenText(fullReply);
       if (!spoken) {
         if (fillerTimer) clearTimeout(fillerTimer);

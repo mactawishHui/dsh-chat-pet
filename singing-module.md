@@ -83,7 +83,11 @@ python3.11 -m venv /opt/qq-cover/venv
 - `qq_sing`：支持即兴写词原创哼唱，同样可选 `mode` / `level` / `intro` / `outro`。
 - 两个工具均为**后台异步执行 + 立即返回回执**，渲染完毕后由 `qq-bridge` 直接发出真实 QQ 语音，并自动写入每日活动与晚安日记流水。
 
-### 4.4 本地 CLI 快速单测
+### 4.4 实时语音通话内异步点歌 + 曲库秒唱缓存（零阻塞）
+- **LRU 曲库秒唱缓存**：[`templates/humanized-sing-engine.mjs`](./templates/humanized-sing-engine.mjs) 自动将每首已唱过的歌曲缓存至 `/opt/qq-bridge/audio/song-cache/`（LRU 上限 15 首 ≈ 38 MB，QQ 聊天与实时语音通话共享）；再次点到曲库里唱过的歌 **0 秒直接开唱**。
+- **通话内隐形旁路 `[SING:mode|歌名|歌手]`**：通话中点歌时 AI 立即自然接话继续正常聊天，后台异步渲染（独立 `_singSeq` 序号，不与查梗/查天气冲突）；渲染就绪后自动等对话安静空档直接把 24kHz PCM 注入 1x 节拍器唱进听筒，**全程支持随时开口 0ms 打断**；若唱好前通话已挂断，自动转为一条 QQ 语音私聊补发，绝不白跑。
+
+### 4.5 本地 CLI 快速单测
 ```bash
 # 点歌翻唱（清唱 / 房间外放）
 node /opt/qq-cover/humanized-sing-engine.mjs cover --song 红色高跟鞋 --artist 蔡健雅 --mode acappella

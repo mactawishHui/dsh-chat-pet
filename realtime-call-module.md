@@ -34,8 +34,8 @@ flowchart LR
     direction TB
     E1["20ms RMS 动态底噪 VAD<br/>300ms 预录防吞字 · 智能断句 · 补话合并"]
     E2["按需流式 ASR<br/>Paraformer Realtime v2 (仅说话期建连)"]
-    E3["零工具轻量大脑<br/>DeepSeek Flash (off) + 本地 0ms 梗库 + 时间校准"]
-    E3S["异步旁路工具 (<0.2ms 路由)<br/>天气 / 实时查梗 / 联网检索 / 记备忘 (180ms 快慢双通道)"]
+    E3["零工具轻量大脑<br/>DeepSeek Flash (off) + 0ms 拼音空耳梗库 + 时间校准"]
+    E3S["统一异步旁路 (<0.2ms 前端路由 + 大脑自发隐形标记)<br/>[LOOKUP:梗] / [SEARCH:检索] / [SING:点歌] / 天气 / 备忘"]
     E4["整句 SSE 流式 TTS<br/>Qwen-Audio-TTS (首包 ~280ms) + 拟人风格指令"]
     E5["1x 实时节拍器<br/>80ms 预充水库 · 漂移补偿 · 5ms 淡入淡出"]
   end
@@ -58,8 +58,9 @@ flowchart LR
 
 | 文件 | 职责 | 平台耦合度 |
 | --- | --- | --- |
-| [`templates/call-engine.mjs`](./templates/call-engine.mjs) | 平台无关全双工通话内核（VAD / 按需 ASR / 轻量大脑 / SSE TTS / 1x 节拍器 / 打断截断 / 摘要写回） | **零耦合**（可接入任意宿主） |
-| [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs) | QQ 原生语音通话守护进程（PulseAudio 虚拟声卡管理、X11 来电检测、双层白名单校验、音频桥接、`127.0.0.1:3300/health`） | 仅适配 LinuxQQ + Docker 容器 |
+| [`templates/call-engine.mjs`](./templates/call-engine.mjs) | 平台无关全双工通话内核（VAD / 按需 ASR / 轻量大脑 / 0ms 拼音空耳梗库 / 自发隐形工具 `[LOOKUP]`·`[SEARCH]`·`[SING]` / SSE TTS / 1x 节拍器 / 打断截断 / 摘要写回） | **零耦合**（可接入任意宿主） |
+| [`templates/meme-matcher.mjs`](./templates/meme-matcher.mjs) | 零依赖中文拼音 + 近音空耳滑窗模糊梗库匹配器（与普通文字聊天 `surf-kb.mjs` 共用） | **零耦合**（纯 Node ICU） |
+| [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs) | QQ 原生语音通话守护进程（PulseAudio 虚拟声卡管理、X11 来电检测、双层白名单校验、音频桥接、异步点歌与挂断转 QQ 语音兜底、`127.0.0.1:3300/health`） | 仅适配 LinuxQQ + Docker 容器 |
 
 ### 宿主对接极简契约（接入任何新平台只需实现 5+1 个回调）
 

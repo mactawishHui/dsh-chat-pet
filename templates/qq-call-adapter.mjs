@@ -778,16 +778,76 @@ class NativeQQCallDaemon {
           return w?.summary || `暂时没查到${task.city}的实时天气`;
         }
         if (task.kind === 'meme') {
-          const r = await lookupMeme(task.query, { allowLive: true, fetchImage: false, log });
+          const r = await lookupMeme(task.query, { allowLive: true, fetchImage: false, context: task.context || '', log });
           const top = r?.items?.[0];
           if (!top) return `没查到「${task.query}」的确切出处`;
           const rep = Array.isArray(top.replies) && top.replies.length ? `；常用接梗：${top.replies[0]}` : '';
-          return `「${top.name}」：${top.meaning || top.origin || ''}${rep}`.slice(0, 180);
+          return `「${top.name}」：${top.meaning || top.origin || ''}${rep}`.slice(0, 200);
         }
         if (task.kind === 'web_search') {
           const hits = await serperGoogleSearch(task.query, { num: 3 });
           if (!Array.isArray(hits) || !hits.length) return `网上暂时没搜到「${task.query}」的明确结果`;
           return hits.slice(0, 2).map((h) => `${h.title}（${String(h.snippet || '').slice(0, 70)}）`).join('；');
+        }
+        if (task.kind === 'sing') {
+          const originEngine = this.engine;
+          const targetUin = uin;
+          const ttsSvc = String(cfg.raw?.sing?.serviceUrl || 'http://127.0.0.1:3210').replace(/\/+$/, '');
+          const endpoint = task.isOriginal ? `${ttsSvc}/song` : `${ttsSvc}/cover`;
+          const payload = task.isOriginal
+            ? {
+                lyrics: '[verse]\n晚风轻轻吹过窗台\n和你电话里聊着天发呆\n[chorus]\n今天也要开开心心呀\n跑调了也不许笑我啦',
+                tags: 'chinese pop, cute sweet female vocal, light and fresh, acoustic guitar and ukulele, gentle, warm, 92bpm',
+                duration: 36,
+                mode: task.mode || 'bedroom_bgm',
+                level: 'natural',
+                framing: true,
+              }
+            : {
+                song: task.song,
+                artist: task.artist || '',
+                mode: task.mode || 'bedroom_bgm',
+                level: 'natural',
+                framing: true,
+                useCache: true,
+              };
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(600000),
+          });
+          const gen = await res.json().catch(() => ({}));
+          if (!res.ok || !gen.ok || !gen.file) {
+            return `刚想给你唱${task.song ? `《${task.song}》` : '这首歌'}，结果伴奏没找着，回头我练熟了再补唱`;
+          }
+          // 若仍在同一通电话中 -> 返回 audio 对象交给 call-engine 在安静空档直接唱进听筒！
+          if (this.state === 'in_call' && this.engine === originEngine) {
+            return {
+              type: 'audio',
+              file: gen.file,
+              cached: Boolean(gen.cached),
+              durationSec: Number(gen.durationSec) || 0,
+              label: task.label,
+            };
+          }
+          // 若渲染完成前电话已挂断 -> 自动转成一条 QQ 语音发到对方私聊，绝不白跑！
+          try {
+            const token = readConsoleToken();
+            const sendRes = await fetch(`${cfg.bridgeBase}/api/send/voice`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                ...(token ? { 'X-Console-Token': token } : {}),
+              },
+              body: JSON.stringify({ target: `private:${targetUin}`, file: gen.file }),
+              signal: AbortSignal.timeout(30000),
+            });
+            log(`[call-adapter] 电话已挂断，已把刚录好的${task.label}转成 QQ 语音发给 ${targetUin} (ok=${sendRes.ok})`);
+          } catch (err) {
+            log(`[call-adapter] 挂断后转 QQ 语音失败: ${err?.message ?? err}`);
+          }
+          return '';
         }
         return '';
       },

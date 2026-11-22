@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 
@@ -34,6 +35,8 @@ const CONFIG = {
   rvcModelJson: process.env.RVC_MODEL_JSON || '/opt/qq-cover/voice-model.json',
   rvcSlimZip: process.env.RVC_SLIM_ZIP || '/opt/qq-cover/slim.zip',
   workRoot: process.env.SING_WORK_ROOT || '/opt/qq-cover/work',
+  songCacheDir: process.env.SING_CACHE_DIR || '/opt/qq-bridge/audio/song-cache',
+  songCacheMax: Number(process.env.SING_CACHE_MAX || 15),
   humanizerPy: process.env.HUMANIZER_PY || '/opt/qq-cover/venv/bin/python',
   humanizerScript: process.env.HUMANIZER_SCRIPT || '/opt/qq-cover/vocal-humanizer.py',
   ttsBaseUrl: (process.env.TTS_BASE_URL || 'http://127.0.0.1:3210').replace(/\/+$/, ''),
@@ -633,7 +636,75 @@ async function runHumanizedVocalPipeline({
   };
 }
 
-// ── 公开入口 1：点歌翻唱已有歌曲（支持歌名检索 / 外部链接 / 本地音频） ─────────
+// ── 曲库 LRU 秒唱缓存（上限 15 首 ≈ 38MB，QQ 聊天与实时通话共享！） ───────────
+function songCacheId(song, mode = 'bedroom_bgm') {
+  const norm = String(song || '').toLowerCase().replace(/[\s《》【】"'.,!?，。！？\-—_]/g, '');
+  if (!norm) return '';
+  const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
+  const hash = crypto.createHash('sha1').update(`${norm}|${safeMode}`).digest('hex').slice(0, 12);
+  return `${safeMode}-${hash}`;
+}
+
+export function findCachedSong({ song = '', mode = 'bedroom_bgm' } = {}) {
+  const cid = songCacheId(song, mode);
+  if (!cid || !fs.existsSync(CONFIG.songCacheDir)) return null;
+  const wavPath = path.join(CONFIG.songCacheDir, `${cid}.wav`);
+  const metaPath = path.join(CONFIG.songCacheDir, `${cid}.json`);
+  try {
+    const st = fs.statSync(wavPath);
+    if (!st.isFile() || st.size < 40 * 1024) return null;
+    const now = new Date();
+    try { fs.utimesSync(wavPath, now, now); } catch {}
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch {}
+    return {
+      file: wavPath,
+      song: meta.song || song,
+      artist: meta.artist || '',
+      mode: meta.mode || mode,
+      durationSec: Number(meta.durationSec) || 0,
+      pitchChange: Number(meta.pitchChange) || 0,
+      cached: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, durationSec = 0, pitchChange = 0 }) {
+  const cid = songCacheId(song, mode);
+  if (!cid || !wavFile || !fs.existsSync(wavFile)) return;
+  try {
+    fs.mkdirSync(CONFIG.songCacheDir, { recursive: true });
+    const dstWav = path.join(CONFIG.songCacheDir, `${cid}.wav`);
+    const dstMeta = path.join(CONFIG.songCacheDir, `${cid}.json`);
+    fs.copyFileSync(wavFile, dstWav);
+    fs.writeFileSync(dstMeta, JSON.stringify({
+      song,
+      artist,
+      mode,
+      durationSec,
+      pitchChange,
+      savedAt: new Date().toISOString(),
+    }, null, 2));
+
+    // LRU 淘汰超出上限的最旧曲目，严格兜底磁盘占用
+    const maxItems = Math.max(3, CONFIG.songCacheMax || 15);
+    const entries = fs.readdirSync(CONFIG.songCacheDir)
+      .filter((f) => f.endsWith('.wav'))
+      .map((f) => {
+        const fp = path.join(CONFIG.songCacheDir, f);
+        return { base: f.slice(0, -4), mtimeMs: fs.statSync(fp).mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const old of entries.slice(maxItems)) {
+      try { fs.unlinkSync(path.join(CONFIG.songCacheDir, `${old.base}.wav`)); } catch {}
+      try { fs.unlinkSync(path.join(CONFIG.songCacheDir, `${old.base}.json`)); } catch {}
+    }
+  } catch {}
+}
+
+// ── 公开入口 1：点歌翻唱已有歌曲（支持歌名检索 / 曲库秒唱缓存 / 外部链接 / 本地音频） ─
 export async function coverSong({
   song = '',
   artist = '',
@@ -644,6 +715,7 @@ export async function coverSong({
   start = null,
   seconds = 45,
   framing = true,
+  useCache = true,
   intro,
   outro,
   pitchChange = null,
@@ -652,10 +724,32 @@ export async function coverSong({
 } = {}) {
   fs.mkdirSync(CONFIG.workRoot, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
+  const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
+  const resolvedTitle = String(song || '').replace(/[《》]/g, '').trim();
+
+  // 0. 命中曲库秒唱缓存（仅按歌名翻唱且未指定自定义起止/口白时直接 0 秒返回！）
+  if (useCache && resolvedTitle && !file && !url && start === null && !intro && !outro) {
+    const hit = findCachedSong({ song: resolvedTitle, mode: safeMode });
+    if (hit) {
+      const outFile = path.join(outDir, `cover-cached-${Date.now()}.wav`);
+      fs.copyFileSync(hit.file, outFile);
+      log(`[sing-engine] ⚡ 命中曲库秒唱缓存: 《${resolvedTitle}》(${safeMode}, ${hit.durationSec}s)`);
+      return {
+        file: outFile,
+        mode: safeMode,
+        level,
+        pitchChange: hit.pitchChange,
+        durationSec: hit.durationSec,
+        song: resolvedTitle,
+        artist: artist || hit.artist,
+        cached: true,
+      };
+    }
+  }
+
   const workDir = fs.mkdtempSync(path.join(CONFIG.workRoot, 'cover-'));
   try {
     let sourcePath = '';
-    let resolvedTitle = String(song || '').replace(/[《》]/g, '').trim();
     let matchedInfo = null;
 
     if (file && fs.existsSync(file)) {
@@ -686,7 +780,7 @@ export async function coverSong({
       clipWav,
       workDir,
       outFile,
-      mode,
+      mode: safeMode,
       level,
       songTitle: resolvedTitle,
       isOriginal: false,
@@ -696,7 +790,17 @@ export async function coverSong({
       pitchOverride: pitchChange,
       log,
     });
-    return { ...res, song: resolvedTitle, artist, matched: matchedInfo };
+    if (resolvedTitle && useCache && framing) {
+      saveSongToCache({
+        song: resolvedTitle,
+        artist,
+        mode: safeMode,
+        wavFile: outFile,
+        durationSec: res.durationSec,
+        pitchChange: res.pitchChange,
+      });
+    }
+    return { ...res, song: resolvedTitle, artist, matched: matchedInfo, cached: false };
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
   }

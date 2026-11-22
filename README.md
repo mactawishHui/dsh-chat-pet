@@ -6,7 +6,7 @@
 > - 完整 QQ 聊天宠物调优 SOP：[chat-pet-tuning-playbook.md](./chat-pet-tuning-playbook.md)（Step 0 到 Step 6）
 > - **独立可解耦「玩梗与接梗」模块指南**：[meme-engine-module.md](./meme-engine-module.md)（平台无关，可直接接入任意聊天平台 / 游戏 NPC / MCP 服务）
 > - **独立可解耦「实时语音通话」模块指南**：[realtime-call-module.md](./realtime-call-module.md)（原生全双工通话、原声流式合成、瞬时打断零重叠、双向记忆打通，内核平台无关）
-> - **「自己的生活」日记模块指南**：[life-diary-module.md](./life-diary-module.md)（每日闲逛输入 + 见闻流水账 + 夜间以自己为主角写日记，发布前去 AI 味与隐私审查）
+> - **「自己的生活」与全景日记模块指南**：[life-diary-module.md](./life-diary-module.md)（每日闲逛输入 + 6 路全景记忆聚合 + 成长里程碑探测 + 重吐槽碎碎念风格锚点 + 发布前去 AI 味与隐私审查）
 
 ---
 
@@ -20,7 +20,8 @@
 | **可选「脑嘴分离」层** | 换其他高助手腔模型时独立做熟人口语转译 | [`templates/mouth.mjs`](./templates/mouth.mjs) + [`templates/mouth-examples.json`](./templates/mouth-examples.json)（支持 DashScope / OpenAI 兼容 / Gemini 4 Hydrogen，默认可开关、超时自动回退） |
 | **独立「玩梗与接梗」模块** | AI 只会当百科科普、听不懂空耳黑话、认不出无字人脸梗图、定时抓老梗/小众梗 | **[`meme-engine-module.md`](./meme-engine-module.md)** + [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) + [`templates/reverse-image.mjs`](./templates/reverse-image.mjs)：4 层查梗（含 B 站+Serper 并发交叉佐证）+ Google Lens 以图搜图 + `replies`/`playTip` 接梗不科普 + **3 档破圈热度×生命力定时扩库** + MemeCub 自动配图（0 常驻内存、平台解耦） |
 | **独立「实时语音通话」模块** | 机器人只能发离线语音条、端到端模型丢原声、打断重音、通话与聊天记忆割裂 | **[`realtime-call-module.md`](./realtime-call-module.md)** + [`templates/call-engine.mjs`](./templates/call-engine.mjs) + [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs)：PulseAudio 双声卡物理零回声原生 QQ 接通 + 双层好友白名单 + 零工具轻量大脑 + 原声整句 SSE 拟人合成 + **80ms 预充 1x 节拍器**瞬时打断零重叠 + 聊天/通话双向记忆互通（仅 ~67 MB 内存） |
-| **私有资产库自动云端备份** | 梗库、梗图、记忆、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` 图文相册 |
+| **独立「自己的生活」与全景日记** | 说说只有一句话、冷冰冰流水账、散文腔/鸡汤味、反复用同一意象、忽略聊天/通话/新解锁本事 | **[`life-diary-module.md`](./life-diary-module.md)** + [`templates/qq-life.mjs`](./templates/qq-life.mjs) + [`templates/diary-examples.json`](./templates/diary-examples.json) + [`templates/life-journal.mjs`](./templates/life-journal.mjs)：每日 2 次独立闲逛刷 B 站/热搜 + 6 路全景记忆聚合（探索/新本事里程碑/实时通话/新梗/脱敏聊天分幕摘录/过往说说时间线）+ 重吐槽碎碎念风格锚点库 + 仅好友可见每天最多 1 条 + 隐私与去 AI 味强制审查（0 常驻内存） |
+| **私有资产库自动云端备份** | 梗库、梗图、记忆、日记、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` / `DIARY.md` 与 `memory/milestones.json` |
 
 ---
 
@@ -32,9 +33,10 @@
 ├── chat-pet-tuning-playbook.md   # QQ 聊天宠物完整零背景复现 SOP（含验收标准与踩坑速查）
 ├── meme-engine-module.md         # 独立可解耦「玩梗与接梗」模块架构与新环境接入指南（平台无关）
 ├── realtime-call-module.md       # 独立可解耦「实时语音通话」模块架构与新环境接入指南（平台无关）
-├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 见闻流水账 + 夜间日记（说说）
+├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 6 路全景记忆 + 重吐槽碎碎念夜间日记
 └── templates/
-    ├── qq-life.mjs               # 闲逛时间 + 夜间写日记（审查后发 QQ 空间，仅好友可见）
+    ├── qq-life.mjs               # 闲逛时间 + 6 路全景记忆聚合 + 成长里程碑 + 夜间日记审查发布
+    ├── diary-examples.json       # 重吐槽 / 碎碎念 / 嘴硬心软活人感日记风格锚点库
     ├── life-journal.mjs          # 见闻流水账（JSONL，凌晨 5 点换日，保留 14 天）
     ├── qq-life-tools.mjs         # 闲逛会话工具边界（只读 B 站 / 安全搜索 + 共用日配额）
     ├── call-engine.mjs           # 平台无关全双工通话内核（VAD / 按需 ASR / SSE TTS / 1x 节拍器 / 打断 / 记忆摘要）

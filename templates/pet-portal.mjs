@@ -1097,6 +1097,12 @@ function stopShare() {
 
 async function captureAndPush(forceSnap = false) {
   if (capBusy || !stream || !ws || ws.readyState !== 1 || curMode === 'off') return;
+  const nowCheck = Date.now();
+  // 随问随看(on_demand)模式极致省流：静默期每 6 秒仅保底抓 1 帧（留给“刚才怎么了”做对比），
+  // 你一开口服务端会立刻发 snap_now (forceSnap=true) 毫秒级抓取当下画面，画质与实时性零损失、带宽与编码耗电狂降 ~80%！
+  if (!forceSnap && curMode === 'on_demand' && lastPushAt && nowCheck - lastPushAt < 6000) {
+    return;
+  }
   // 严格背压保护：若上一帧还没传完，跳过中间帧绝不在 WS 队列里积压旧画面！
   if (!forceSnap && ws.bufferedAmount > 32768) {
     $('statLeft').textContent = '网络发包中，跳过旧帧防滞后 (' + Math.round(ws.bufferedAmount / 1024) + 'KB)';
@@ -1120,8 +1126,10 @@ async function captureAndPush(forceSnap = false) {
     }
     $('diffBar').style.width = Math.min(100, Math.round(diff * 320)) + '%';
     const now = Date.now();
-    if (!forceSnap && prevGrid && diff < 0.025 && now - lastPushAt < 8000) {
-      $('statLeft').textContent = '画面静止，省流待机 (Δ=' + diff.toFixed(3) + ')';
+    // 主动陪看模式仅在明显画面变化(Δ≥0.065)或 12 秒保活时才编码上传；随问随看静止画面 12 秒保活
+    const minDiff = curMode === 'watch_along' ? 0.065 : 0.025;
+    if (!forceSnap && prevGrid && diff < minDiff && now - lastPushAt < 12000) {
+      $('statLeft').textContent = (curMode === 'on_demand' ? '随问省流待机' : '画面平稳，省流待机') + ' (Δ=' + diff.toFixed(3) + ')';
       return;
     }
     prevGrid = grid; lastPushAt = now;

@@ -45,6 +45,7 @@
     ├── screen-vision-engine.mjs  # 平台无关实时看屏内核（帧差节流 / 纯内存环形池 / 45s 屏幕台词槽 / 三模式）
     ├── screen-audio-listener.mjs # 通道 2 独立屏幕音轨后台静默听译器（静音/BGM 自动休眠 / 整屏防回声 / 永不打断）
     ├── screen-web-endpoint.mjs   # Endpoint B：物理三通道 1080p 浏览器推屏+推音端 + WS/HTTP API + 独立陪看语音播报
+    ├── disk-hygiene.mjs          # 零常驻磁盘代谢 GC（临时通话会话清理 / DSH 附件引用计数回收 / 旧 TTS 缓存清理）
     ├── qq-screen-adapter.mjs     # Endpoint A：QQ 原生屏幕共享容器 X11 捕获适配层
     ├── qq-life.mjs               # 多渠道闲逛 + 8 路全景记忆/回忆杀 + 动态手绘手账日记审查发布
     ├── memory-consolidator.mjs   # 睡眠海马体记忆整理（去重合并、日期锚定、过期代谢归档，热写回桥接）

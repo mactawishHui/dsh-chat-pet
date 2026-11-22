@@ -43,16 +43,23 @@ class StandaloneScreenCompanion {
     this.lastActivityAt = Date.now();
     this._streamAc = null;
     this._pending = null;
+    this._imagesSent = 0;
+    this._recentQa = [];
+    this._pendingRecap = '';
   }
 
   async _ensureSession() {
     if (this.api && this.sid) return;
-    const { NodeApiClient } = await import(path.join(ROOT, 'src', 'dsh-client.js'));
-    this.api = new NodeApiClient(this.dshBaseUrl, undefined, {
-      token: this.dshAuthToken,
-      tokenExplicit: Boolean(this.dshAuthToken)
-    });
-    await this.api.ensureAuth();
+    if (!this.api) {
+      const { NodeApiClient } = await import(path.join(ROOT, 'src', 'dsh-client.js'));
+      this.api = new NodeApiClient(this.dshBaseUrl, undefined, {
+        token: this.dshAuthToken,
+        tokenExplicit: Boolean(this.dshAuthToken)
+      });
+      await this.api.ensureAuth();
+      this._streamAc = new AbortController();
+      this._pump(this._streamAc.signal);
+    }
     const created = await this.api.callUnary('session/create', {
       title: `screen-companion-${new Date().toISOString().slice(11, 16)}`,
       agentPreset: 'qq-call',
@@ -60,11 +67,23 @@ class StandaloneScreenCompanion {
     });
     this.sid = created?.result?.value?.sessionId;
     if (!this.sid) throw new Error('创建独立看屏会话失败');
-    this._streamAc = new AbortController();
-    this._pump(this._streamAc.signal);
+    this._imagesSent = 0;
     this.api.events.follow(this.sid);
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 180));
     this.log(`[screen-web] 独立多模态看屏会话就绪: ${this.sid}`);
+  }
+
+  _rotateSessionIfNeeded() {
+    if (!this.api || !this.sid || this._imagesSent < 12) return;
+    const oldSid = this.sid;
+    this.sid = null;
+    this._imagesSent = 0;
+    if (this._recentQa.length) {
+      this._pendingRecap = `[独立看屏前情（已自动释放旧图以保持极速响应）：\n${this._recentQa.slice(-6).join('\n')}]`;
+    }
+    this.api.events.forget(oldSid);
+    this.api.workspace?.archiveSession({ sessionId: oldSid }).catch(() => {});
+    this.log(`[screen-web] ♻️ 独立看屏会话已满 12 图，下次提问自动切轻量新会话 (${oldSid})`);
   }
 
   _pump(signal) {
@@ -99,9 +118,15 @@ class StandaloneScreenCompanion {
     this.busy = true;
     try {
       await this._ensureSession();
+      let fullPrompt = promptText;
+      if (this._pendingRecap) {
+        fullPrompt = `${this._pendingRecap}\n\n${promptText}`;
+        this._pendingRecap = '';
+      }
+      if (imageParts.length) this._imagesSent += imageParts.length;
       const content = imageParts.length
-        ? [...imageParts, { type: 'text', text: promptText }]
-        : [{ type: 'text', text: promptText }];
+        ? [...imageParts, { type: 'text', text: fullPrompt }]
+        : [{ type: 'text', text: fullPrompt }];
       const t0 = Date.now();
       const raw = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -131,7 +156,12 @@ class StandaloneScreenCompanion {
         return { text: '', silent: true, ms };
       }
       const text = cleanReply(raw);
-      if (text) this.lastActivityAt = Date.now();
+      if (text) {
+        this.lastActivityAt = Date.now();
+        this._recentQa.push(`你：${text.slice(0, 100)}`);
+        if (this._recentQa.length > 10) this._recentQa = this._recentQa.slice(-10);
+      }
+      this._rotateSessionIfNeeded();
       return { text, silent: !text, ms };
     } finally {
       this.busy = false;
@@ -535,6 +565,11 @@ function stopShare() {
 
 async function captureAndPush(forceSnap = false) {
   if (capBusy || !stream || !ws || ws.readyState !== 1 || curMode === 'off') return;
+  const nowCheck = Date.now();
+  // 随问随看(on_demand)模式极致省流：静默期每 6 秒保底 1 帧，开口瞬间靠 snap_now 毫秒抓帧，省掉 ~80% 流量与编码消耗
+  if (!forceSnap && curMode === 'on_demand' && lastPushAt && nowCheck - lastPushAt < 6000) {
+    return;
+  }
   // 严格防积压背压保护：若上一帧还没发完，直接跳过中间帧，绝不让旧画面在 WS 缓冲里越积越滞后！
   if (!forceSnap && ws.bufferedAmount > 32768) {
     $('statLeft').textContent = '网络发包中，跳过中间帧防滞后 (' + Math.round(ws.bufferedAmount / 1024) + 'KB)';
@@ -559,9 +594,10 @@ async function captureAndPush(forceSnap = false) {
     }
     $('diffBar').style.width = Math.min(100, Math.round(diff * 320)) + '%';
     const now = Date.now();
-    // 画面几乎静止时每 8 秒才推 1 帧保活；若是服务端 snap_now 立即强制抓取
-    if (!forceSnap && prevGrid && diff < 0.025 && now - lastPushAt < 8000) {
-      $('statLeft').textContent = '画面静止，省流待机 (Δ=' + diff.toFixed(3) + ')';
+    // 主动陪看模式仅在明显切镜(Δ≥0.065)或 12 秒保活时才上传；若是服务端 snap_now 立即强制抓取
+    const minDiff = curMode === 'watch_along' ? 0.065 : 0.025;
+    if (!forceSnap && prevGrid && diff < minDiff && now - lastPushAt < 12000) {
+      $('statLeft').textContent = (curMode === 'on_demand' ? '随问省流待机' : '画面平稳，省流待机') + ' (Δ=' + diff.toFixed(3) + ')';
       return;
     }
     prevGrid = grid; lastPushAt = now;

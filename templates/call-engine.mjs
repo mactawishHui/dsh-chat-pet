@@ -464,6 +464,14 @@ export class RealtimeCallEngine {
     this._pendingSidecarNotes = [];
     this._sidecarSeq = 0;
 
+    // 视觉上下文防滚雪球：单会话累计发满 12 张看屏图后，安静间隙自动无感换新轻量会话（保留近期文字前情、甩掉老图 Token）
+    this.maxSessionImages = Number(opts.maxSessionImages ?? 12);
+    this._imagesSentInSession = 0;
+    this._cachedContextPrimer = '';
+    this._pendingSessionPrimer = '';
+    this._rotatingSession = false;
+    this._rotateTimer = null;
+
     // 内部状态
     this.active = false;
     this.startedAt = 0;
@@ -612,6 +620,7 @@ export class RealtimeCallEngine {
     this._startPacer();
     const ctx = await this.getContext(this.callerId).catch(() => ({}));
     const contextPrimer = this._formatContextPrimer(ctx);
+    this._cachedContextPrimer = contextPrimer;
     this._startWatchdog();
 
     // 立即用她的声音先打声招呼，同时悄悄把上下文喂进会话
@@ -1165,9 +1174,16 @@ export class RealtimeCallEngine {
     }
 
     try {
-      const contentBlocks = Array.isArray(imageParts) && imageParts.length
-        ? [...imageParts, { type: 'text', text: promptText }]
-        : [{ type: 'text', text: promptText }];
+      let effectivePrompt = promptText;
+      if (this._pendingSessionPrimer && !isGreeting) {
+        effectivePrompt = `${this._pendingSessionPrimer}\n\n${promptText}`;
+        this._pendingSessionPrimer = '';
+      }
+      const imgCount = Array.isArray(imageParts) ? imageParts.length : 0;
+      if (imgCount > 0) this._imagesSentInSession += imgCount;
+      const contentBlocks = imgCount > 0
+        ? [...imageParts, { type: 'text', text: effectivePrompt }]
+        : [{ type: 'text', text: effectivePrompt }];
       const fullReply = await new Promise((resolve, reject) => {
         if (ac.signal.aborted) return resolve('');
         this.dshPendingTurn = { gotChunks: false, fullText: '', resolve, reject };
@@ -1269,6 +1285,8 @@ export class RealtimeCallEngine {
             this._hangupTimer = null;
             if (this.active && !this._ending) this.onHangupRequest('farewell');
           }, waitLeft);
+        } else if (this._imagesSentInSession >= this.maxSessionImages && !this._rotatingSession) {
+          this._scheduleVisualSessionRotation();
         }
       }
       return spoken;
@@ -1299,6 +1317,77 @@ export class RealtimeCallEngine {
     }
   }
 
+  _scheduleVisualSessionRotation() {
+    if (this._rotateTimer || this._rotatingSession || !this.active || this._ending) return;
+    this._rotateTimer = setTimeout(() => {
+      this._rotateTimer = null;
+      this._rotateVisualSession().catch((err) => {
+        this._rotatingSession = false;
+        this.log(`[call-engine] 视觉会话换窗失败（不影响通话）: ${err?.message ?? err}`);
+      });
+    }, 1200);
+    this._rotateTimer.unref?.();
+  }
+
+  /**
+   * 视觉上下文滑动换窗：后台零成本预建新 DSH 会话，保留最近 10 轮文字前情，甩掉已发送的 12+ 张历史截图 Token
+   */
+  async _rotateVisualSession() {
+    if (this._rotatingSession || !this.active || this._ending || !this.dshApi) return;
+    if (this._inSpeech || this._aiThinking) {
+      this._scheduleVisualSessionRotation();
+      return;
+    }
+    this._rotatingSession = true;
+    try {
+      const created = await this.dshApi.callUnary('session/create', {
+        title: `qq-call-${this.callerId}-${new Date().toISOString().slice(11, 16)}-r`,
+        agentPreset: this.dshPreset,
+        model: this.dshModel
+      });
+      const newSid = created?.result?.value?.sessionId;
+      if (!newSid) return;
+      this.dshApi.events.follow(newSid);
+      await new Promise((r) => setTimeout(r, 120));
+
+      // 若预建期间用户刚好开口在思考，等当前回合完全结束再切换，严防竞态
+      const waitDeadline = Date.now() + 8000;
+      while (this.active && !this._ending && (this._aiThinking || this.dshPendingTurn) && Date.now() < waitDeadline) {
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      if (!this.active || this._ending || this._aiThinking || this.dshPendingTurn) {
+        this.dshApi.events.forget(newSid);
+        this.dshApi.workspace?.archiveSession({ sessionId: newSid }).catch(() => {});
+        return;
+      }
+
+      const oldSid = this.dshSessionId;
+      const oldImgs = this._imagesSentInSession;
+      const recentRecap = this.transcript
+        .slice(-10)
+        .map((m) => `${m.role === 'user' ? this.callerName : '你'}：${String(m.text || '').slice(0, 120)}`)
+        .join('\n');
+      const primerParts = [];
+      if (this._cachedContextPrimer) primerParts.push(this._cachedContextPrimer);
+      if (recentRecap) {
+        primerParts.push(`[正在进行的语音/看屏通话前情（系统已自动卸掉之前看过的历史截图以保持极速响应，无缝自然接着聊，绝不要重新打招呼）：\n${recentRecap}]`);
+      }
+
+      this.dshSessionId = newSid;
+      this._imagesSentInSession = 0;
+      this._pendingSessionPrimer = primerParts.join('\n\n');
+      this.log(`[call-engine] ♻️ 视觉会话无感换窗完成 (${oldImgs}张历史图已卸载)：${oldSid} → ${newSid}`);
+
+      if (oldSid) {
+        this.dshApi.events.forget(oldSid);
+        this.dshApi.stopSessionWork(oldSid).catch(() => {});
+        this.dshApi.workspace?.archiveSession({ sessionId: oldSid }).catch(() => {});
+      }
+    } finally {
+      this._rotatingSession = false;
+    }
+  }
+
   async stop(reason = 'ended') {
     if (!this.active || this._ending) return null;
     this._ending = true;
@@ -1306,6 +1395,7 @@ export class RealtimeCallEngine {
     if (this._watchdogTimer) clearInterval(this._watchdogTimer);
     if (this._pacerTimer) clearInterval(this._pacerTimer);
     if (this._hangupTimer) { clearTimeout(this._hangupTimer); this._hangupTimer = null; }
+    if (this._rotateTimer) { clearTimeout(this._rotateTimer); this._rotateTimer = null; }
     this._clearPlaybackQueue();
     this._turnAc?.abort();
     this._activeAsr?.abort();
@@ -1313,6 +1403,7 @@ export class RealtimeCallEngine {
     if (this.dshSessionId) {
       this.dshApi?.events.forget(this.dshSessionId);
       this.dshApi?.stopSessionWork(this.dshSessionId).catch(() => {});
+      this.dshApi?.workspace?.archiveSession({ sessionId: this.dshSessionId }).catch(() => {});
     }
 
     const durationSec = Math.max(1, Math.round((Date.now() - this.startedAt) / 1000));

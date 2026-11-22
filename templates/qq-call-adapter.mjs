@@ -303,6 +303,9 @@ class NativeQQCallDaemon {
   async start() {
     const cfg = loadConfig();
     await ensurePulseAudio();
+    // 清理上次服务重启可能残留的孤儿 pacat/parec，并在宿主机侧提权 PulseAudio 调度优先级
+    await dockerExec('pkill -9 -f "pacat.*ai_mic_sink|parec.*qq_spk" 2>/dev/null || true').catch(() => {});
+    await execFileAsync('sh', ['-c', 'renice -n -10 $(pgrep -f "pulseaudio.*qq-call") 2>/dev/null || true']).catch(() => {});
     this.wlMap = await fetchFriendWhitelistMap(cfg);
     this.lastWlRefresh = Date.now();
     const wlDesc = [...this.wlMap.entries()].map(([u, v]) => `${u}(${[...v.names].join('/')})`).join(', ');
@@ -364,6 +367,7 @@ class NativeQQCallDaemon {
       getCallEngine: () => this.engine,
       getCallState: () => this.state,
       getToken: () => readConsoleToken(),
+      dashscopeKeyFile: DASHSCOPE_KEY_PATH,
       dshBaseUrl: cfg.dshBaseUrl,
       dshAuthToken: cfg.dshAuthToken,
       ttsUrl: String(cfg.raw.draw?.serviceUrl || 'http://127.0.0.1:3210'),
@@ -646,7 +650,7 @@ class NativeQQCallDaemon {
     }
     const p = spawn('docker', [
       'exec', '-i', CONTAINER_NAME, 'su', '-s', '/bin/sh', 'node', '-c',
-      'export HOME=/app XDG_RUNTIME_DIR=/tmp/runtime-1000; exec pacat -p -d ai_mic_sink --raw --format=s16le --rate=24000 --channels=1 --latency-msec=160 --process-time-msec=30 --volume=58000'
+      'export HOME=/app XDG_RUNTIME_DIR=/tmp/runtime-1000; exec pacat -p -d ai_mic_sink --raw --format=s16le --rate=24000 --channels=1 --latency-msec=100 --process-time-msec=20 --volume=58000'
     ], { stdio: ['pipe', 'ignore', 'ignore'] });
     p.on('exit', () => {
       if (this.pacatProc === p) this.pacatProc = null;
@@ -784,6 +788,8 @@ class NativeQQCallDaemon {
     });
 
     this._spawnParec();
+    // 在宿主机 root 下把 QQ 软渲进程降权 (+15) 并把 PulseAudio / AudioService 提权 (-10)，确保视频软渲绝不抢占语音播放
+    execFileAsync('sh', ['-c', 'renice -n -10 $(pgrep -f "pulseaudio.*qq-call|audio\\.mojom\\.AudioService") 2>/dev/null || true; renice -n 15 $(pgrep -f "/opt/QQ/qq --type=zygote --no-zygote-sandbox") 2>/dev/null || true']).catch(() => {});
     await this.qqScreenAdapter.start(this.activeWin?.wid || '', { forceShareWin }).catch(() => {});
     try {
       await this.engine.start();

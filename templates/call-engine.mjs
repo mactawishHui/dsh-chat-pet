@@ -13,14 +13,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
-import { detectScreenModeCommand } from './screen-vision-engine.mjs';
+import { detectScreenModeCommand, detectScreenAudioCommand } from './screen-vision-engine.mjs';
 
 const FRAME_SAMPLES_16K = 320; // 20ms @ 16kHz
 const FRAME_BYTES_16K = FRAME_SAMPLES_16K * 2; // 640 bytes
 const PCM24K_BYTES_PER_MS = 48; // 24000 * 2 / 1000
 const PACER_TICK_MS = 20;
 const PACER_CHUNK_BYTES = PCM24K_BYTES_PER_MS * PACER_TICK_MS; // 960 bytes = 20ms @ 24kHz
-const PACER_PREFILL_BYTES = PCM24K_BYTES_PER_MS * 120; // 120ms 预充缓冲，即使在软件渲染高负载下也彻底杜绝欠载卡顿
+const PACER_PREFILL_BYTES = PCM24K_BYTES_PER_MS * 180; // 180ms 预充水库（严格大于 pacat 100ms 目标缓冲），攒够再开播彻底消灭卡顿
 
 // 只匹配真正“话没说完”的连接词/思考停顿词（绝不包含「了/的/吧/呢/啊/呀」等句末完结词！）
 const CONTINUATION_RE = /(然后|就是|但是|不过|因为|所以|那个|这个|而且|比如|其实|好像|可能|我觉得|就是说|另外|还有|或者|的话|嗯|呃|唉|都)[，,、。.\s]*$/;
@@ -201,13 +201,24 @@ export function detectSidecarTask(utterance, { defaultCity = '', localMemeHit = 
 }
 
 /**
- * DashScope Paraformer 实时流式语音识别会话（仅在用户开口说话期间建连，静音期 0 费用）
+ * DashScope Paraformer 实时流式语音识别会话（仅在有声音期间建连，静音期 0 费用）
  */
-class ParaformerStream {
-  constructor({ apiKey, wsUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference', model = 'paraformer-realtime-v2', log = console.log }) {
+export class ParaformerStream {
+  constructor({
+    apiKey,
+    wsUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+    model = 'paraformer-realtime-v2',
+    onSentence = null,
+    onPartial = null,
+    onClose = null,
+    log = console.log
+  }) {
     this.apiKey = apiKey;
     this.wsUrl = wsUrl;
     this.model = model;
+    this.onSentence = onSentence;
+    this.onPartial = onPartial;
+    this.onClose = onClose;
     this.log = log;
     this.taskId = crypto.randomUUID().replace(/-/g, '');
     this.ws = null;
@@ -257,10 +268,16 @@ class ParaformerStream {
         if (sent && typeof sent.text === 'string') {
           const t = sent.text.trim();
           if (sent.sentence_end) {
-            if (t) this.committedSegments.push(t);
+            if (t) {
+              this.committedSegments.push(t);
+              try { this.onSentence?.(t); } catch {}
+            }
             this.currentPartial = '';
           } else {
             this.currentPartial = t;
+            if (t) {
+              try { this.onPartial?.(t); } catch {}
+            }
           }
         }
       } else if (ev === 'task-finished' || ev === 'task-failed') {
@@ -273,6 +290,7 @@ class ParaformerStream {
     });
     this.ws.on('close', () => {
       this._resolveFinal();
+      try { this.onClose?.(); } catch {}
     });
   }
 
@@ -467,6 +485,7 @@ export class RealtimeCallEngine {
     this._playQueueBytes = 0;
     this._pacerTimer = null;
     this._aiThinking = false;
+    this._ttsStreaming = false;
     this._aiHasSpokenThisTurn = false;
     this._pendingUserUtterance = ''; // 若 AI 还在思考就被补话，合并后再回答
     this._playedBytesThisTurn = 0;
@@ -613,7 +632,8 @@ export class RealtimeCallEngine {
       const now = performance.now();
       let need = 0;
       if (!this._pacerActive) {
-        // 新一句开播前预充 80ms 缓冲给 PulseAudio，彻底消灭低延迟欠载噼啪杂音
+        // 关键：若 SSE TTS 正在推流但还没攒够 180ms 水库，先等几十毫秒攒满再开播，绝不把 30ms 碎包直接喂给 pacat 导致反复欠载卡顿！
+        if (this._ttsStreaming && this._playQueueBytes < PACER_PREFILL_BYTES) return;
         this._pacerActive = true;
         this._pacerOriginMs = now;
         this._pacerSentBytes = 0;
@@ -791,18 +811,22 @@ export class RealtimeCallEngine {
     this._preRoll.push(Buffer.from(frame));
     if (this._preRoll.length > 15) this._preRoll.shift();
 
-    const screenActive = Boolean(this.screenEngine && this.screenEngine.hasFreshFrame());
-    const isWatchMode = Boolean(screenActive && this.screenEngine.mode === 'watch_along');
+    const latestFrame = this.screenEngine?.getLatestFrame();
+    const screenActive = Boolean(latestFrame);
+    // 物理三通道（web-direct 等独立推屏源）时，通道 1 是纯净真人麦，保持 100% 原始高灵敏度；
+    // 仅在 QQ 单轨共享（qq-screen）可能混入设备 BGM 时才启用额外的抗背景音抬升
+    const qqScreenMixed = Boolean(screenActive && latestFrame.source === 'qq-screen');
+    const isWatchMode = Boolean(qqScreenMixed && this.screenEngine.mode === 'watch_along');
 
-    // 非说话期平滑更新动态底噪（共享屏幕含游戏/电影 BGM 时允许底噪自适应抬升至 1100，防背景音乐持续误触）
-    const floorCap = screenActive ? 1100 : 500;
-    const floorSampleMax = screenActive ? 1400 : 600;
-    if (!this._inSpeech && rms < floorSampleMax) {
+    // 非说话期平滑更新动态底噪（严格限顶 ≤600，绝不因视频/游戏 BGM 抬高阈值导致听不见真人说话）
+    const floorCap = qqScreenMixed ? 600 : 500;
+    const floorSampleMax = qqScreenMixed ? 800 : 600;
+    if (!this._inSpeech && rms < Math.max(floorSampleMax, this._noiseFloor)) {
       this._noiseFloor = Math.max(40, Math.min(floorCap, this._noiseFloor * 0.94 + rms * 0.06));
     }
 
-    const watchBoost = isWatchMode ? 1.25 : (screenActive ? 1.12 : 1.0);
-    const guardBusy = aiSpeaking || (screenActive && this._aiThinking);
+    const watchBoost = isWatchMode ? 1.2 : (qqScreenMixed ? 1.08 : 1.0);
+    const guardBusy = aiSpeaking || (qqScreenMixed && this._aiThinking);
     const startThresh = Math.round((guardBusy
       ? Math.max(540, this._noiseFloor * 3.6)
       : Math.max(320, this._noiseFloor * 2.8)) * watchBoost);
@@ -811,8 +835,8 @@ export class RealtimeCallEngine {
     if (!this._inSpeech) {
       if (rms >= startThresh) {
         this._speechFrames++;
-        // AI 正在说话或看屏思考期，需要 240~300ms 持续人声才打断，避免游戏音效/BGM 误杀在途回复
-        const needFrames = aiSpeaking ? 15 : (guardBusy ? 12 : (screenActive ? 7 : 5));
+        // AI 正在说话时需 300ms 持续人声才打断；物理三通道空闲态保持 100ms (5帧) 极致灵敏度
+        const needFrames = aiSpeaking ? 15 : (guardBusy ? 11 : (qqScreenMixed ? 7 : 5));
         if (this._speechFrames >= needFrames) {
           if (aiSpeaking || this._aiThinking) {
             this._triggerBargeIn(aiSpeaking);
@@ -867,8 +891,8 @@ export class RealtimeCallEngine {
     const asr = this._activeAsr;
     this._activeAsr = null;
     asr?.abort();
-    // 把当前游戏/电影 BGM 能量快速吸收进动态底噪，避免反复误触
-    this._noiseFloor = Math.min(1150, Math.max(this._noiseFloor * 1.15, currentRms * 0.85));
+    // 把当前游戏/电影 BGM 能量轻度吸收进底噪，严格限顶 ≤650，绝不把门槛抬高到听不见真人说话
+    this._noiseFloor = Math.min(650, Math.max(this._noiseFloor * 1.15, Math.min(currentRms * 0.85, 650)));
     this.log(`[call-engine] 检测到纯背景音/游戏BGM（2.4s 无语音识别），静默忽略并自适应底噪→${Math.round(this._noiseFloor)}`);
   }
 
@@ -909,6 +933,7 @@ export class RealtimeCallEngine {
     this._turnAc?.abort();
     this._turnAc = null;
     this._aiThinking = false;
+    this._ttsStreaming = false;
     this._aiHasSpokenThisTurn = false;
     this._clearPlaybackQueue();
     if (this.dshPendingTurn) {
@@ -1005,11 +1030,21 @@ export class RealtimeCallEngine {
         this.screenEngine.setMode(modeCmd.mode, 'voice_command');
         notes.push(`[系统提示：已按对方要求将看屏模式切换为「${modeCmd.label}」，请自然简短地答应一句]`);
       }
+      const audioCmd = detectScreenAudioCommand(text);
+      if (audioCmd) {
+        this.screenEngine.setAudioEnabled(audioCmd.enabled, 'voice_command');
+        notes.push(`[系统提示：已按对方要求${audioCmd.label}，请自然简短地答应一句]`);
+      }
       const picked = this.screenEngine.pickFramesForTurn(text);
       if (picked.frameCount > 0) {
         screenImageParts = picked.imageParts;
         notes.push(picked.note);
         this.log(`[call-screen] 随轮附带 ${picked.frameCount} 帧实时画面 (${this.screenEngine.mode})`);
+      }
+      const audioCtx = this.screenEngine.getRecentAudioContext();
+      if (audioCtx.note) {
+        notes.push(audioCtx.note);
+        this.log(`[call-screen] 随轮注入通道 2 屏幕台词 (${audioCtx.text.length}字)`);
       }
     }
 
@@ -1032,12 +1067,14 @@ export class RealtimeCallEngine {
     if (idleMs < 14000) return false;
     const imageParts = this.screenEngine.buildWatchAlongParts(frames);
     if (!imageParts.length) return false;
-    this.log(`[call-screen] 主动陪看检查 (Δ=${changeScore.toFixed(2)}, 静默=${Math.round(idleMs / 1000)}s, ${imageParts.length}帧)…`);
-    const promptText = [
-      `[主动陪看模式${label ? ` · ${label}` : ''}：你们正在一起看屏幕，画面刚发生了明显变化，且过去 ${Math.round(idleMs / 1000)} 秒没人说话。]`,
-      '请先看清画面细节或字幕：真有值得吐槽/夸一句/接茬的点就自然冒一句短话（≤22字）；如果画面平淡没啥好说的，严格只输出 [SILENT] 绝不硬凑话！'
-    ].join('\n');
-    const spoken = await this._runAiTurn(promptText, { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', imageParts, silentIfToken: true, isWatchAlong: true });
+    const audioCtx = this.screenEngine.getRecentAudioContext();
+    this.log(`[call-screen] 主动陪看检查 (Δ=${changeScore.toFixed(2)}, 静默=${Math.round(idleMs / 1000)}s, ${imageParts.length}帧${audioCtx.text ? `, 台词${audioCtx.text.length}字` : ''})…`);
+    const promptLines = [
+      `[主动陪看模式${label ? ` · ${label}` : ''}：你们正在一起看屏幕，画面刚发生了明显变化，且过去 ${Math.round(idleMs / 1000)} 秒没人说话。]`
+    ];
+    if (audioCtx.note) promptLines.push(audioCtx.note);
+    promptLines.push('请先看清画面细节、字幕与刚才的屏幕台词：真有值得吐槽/夸一句/接茬的点就自然冒一句短话（≤22字）；如果画面平淡没啥好说的，严格只输出 [SILENT] 绝不硬凑话！');
+    const spoken = await this._runAiTurn(promptLines.join('\n'), { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', imageParts, silentIfToken: true, isWatchAlong: true });
     return Boolean(spoken);
   }
 
@@ -1047,8 +1084,12 @@ export class RealtimeCallEngine {
     const notes = [];
     let imageParts = [];
     if (this.screenEngine) {
+      const audioCmd = detectScreenAudioCommand(q);
+      if (audioCmd) this.screenEngine.setAudioEnabled(audioCmd.enabled, 'text_command');
       const picked = this.screenEngine.pickFramesForTurn(q, { force: true });
       if (picked.frameCount > 0) { imageParts = picked.imageParts; notes.push(picked.note); }
+      const audioCtx = this.screenEngine.getRecentAudioContext();
+      if (audioCtx.note) notes.push(audioCtx.note);
     }
     this.transcript.push({ role: 'user', text: q, ts: Date.now() });
     this._lastActivityAt = Date.now();
@@ -1162,38 +1203,43 @@ export class RealtimeCallEngine {
       this._totalQueuedBytesThisTurn = 0;
 
       // 整句 SSE 流式合成推入 1x 节拍队列，句间加 220ms 自然换气停顿
+      this._ttsStreaming = true;
       const breathGap = Buffer.alloc(PCM24K_BYTES_PER_MS * 220);
-      for (let ci = 0; ci < clauses.length; ci++) {
-        if (mySeq !== this._turnSeq || ac.signal.aborted) break;
-        const clause = clauses[ci];
-        const tTtsStart = Date.now();
-        await streamDashscopeTts({
-          text: clause,
-          apiKey: this._apiKey(),
-          model: this.ttsModel,
-          voice: this.ttsVoice,
-          instruction: this.ttsInstruction,
-          signal: ac.signal,
-          onChunk: (pcm) => {
-            if (mySeq !== this._turnSeq || ac.signal.aborted) return;
-            if (fillerTimer) { clearTimeout(fillerTimer); fillerTimer = null; }
-            if (!firstAudioMs) {
-              firstAudioMs = Date.now() - vadEndAt;
-              this._aiHasSpokenThisTurn = true;
-              const ttsFirstMs = Date.now() - tTtsStart;
-              if (!isGreeting) {
-                this.latencies.push({ asrMs, llmMs, ttsFirstMs, totalMs: firstAudioMs, fillerPlayed });
-                this.log(`[call-engine] 🐳 小鲸鲸: "${spoken}" | asr=${asrMs}ms llm=${llmMs}ms tts1st=${ttsFirstMs}ms total=${firstAudioMs}ms`);
-              } else {
-                this.log(`[call-engine] 🐳 开场打招呼: "${spoken}" (llm=${llmMs}ms tts1st=${ttsFirstMs}ms)`);
+      try {
+        for (let ci = 0; ci < clauses.length; ci++) {
+          if (mySeq !== this._turnSeq || ac.signal.aborted) break;
+          const clause = clauses[ci];
+          const tTtsStart = Date.now();
+          await streamDashscopeTts({
+            text: clause,
+            apiKey: this._apiKey(),
+            model: this.ttsModel,
+            voice: this.ttsVoice,
+            instruction: this.ttsInstruction,
+            signal: ac.signal,
+            onChunk: (pcm) => {
+              if (mySeq !== this._turnSeq || ac.signal.aborted) return;
+              if (fillerTimer) { clearTimeout(fillerTimer); fillerTimer = null; }
+              if (!firstAudioMs) {
+                firstAudioMs = Date.now() - vadEndAt;
+                this._aiHasSpokenThisTurn = true;
+                const ttsFirstMs = Date.now() - tTtsStart;
+                if (!isGreeting) {
+                  this.latencies.push({ asrMs, llmMs, ttsFirstMs, totalMs: firstAudioMs, fillerPlayed });
+                  this.log(`[call-engine] 🐳 小鲸鲸: "${spoken}" | asr=${asrMs}ms llm=${llmMs}ms tts1st=${ttsFirstMs}ms total=${firstAudioMs}ms`);
+                } else {
+                  this.log(`[call-engine] 🐳 开场打招呼: "${spoken}" (llm=${llmMs}ms tts1st=${ttsFirstMs}ms)`);
+                }
               }
+              this._enqueueAudioOut(pcm);
             }
-            this._enqueueAudioOut(pcm);
+          });
+          if (ci < clauses.length - 1 && mySeq === this._turnSeq && !ac.signal.aborted) {
+            this._enqueueAudioOut(breathGap);
           }
-        });
-        if (ci < clauses.length - 1 && mySeq === this._turnSeq && !ac.signal.aborted) {
-          this._enqueueAudioOut(breathGap);
         }
+      } finally {
+        if (mySeq === this._turnSeq) this._ttsStreaming = false;
       }
 
       if (mySeq === this._turnSeq) {

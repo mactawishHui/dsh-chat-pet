@@ -6,7 +6,7 @@
 > - 完整 QQ 聊天宠物调优 SOP：[chat-pet-tuning-playbook.md](./chat-pet-tuning-playbook.md)（Step 0 到 Step 6）
 > - **独立可解耦「玩梗与接梗」模块指南**：[meme-engine-module.md](./meme-engine-module.md)（平台无关，可直接接入任意聊天平台 / 游戏 NPC / MCP 服务）
 > - **独立可解耦「实时语音通话」模块指南**：[realtime-call-module.md](./realtime-call-module.md)（原生全双工通话、原声流式合成、瞬时打断零重叠、异步旁路工具、双向记忆打通，内核平台无关）
-> - **独立可解耦「实时看屏陪聊」模块指南**：[screen-vision-module.md](./screen-vision-module.md)（平台无关看屏引擎 + 本地 1080p 浏览器超清直连 + QQ 屏幕共享适配层，原生多模态 ~1.3s 看图陪看电影/打游戏）
+> - **独立可解耦「实时看屏陪聊」模块指南**：[screen-vision-module.md](./screen-vision-module.md)（物理三通道分离：纯净人声麦 + 1080p 浏览器画面与独立屏幕音轨后台听译 + AI 发声，原生多模态 ~1.3s 陪看电影/打游戏）
 > - **「自己的生活」与全景日记模块指南**：[life-diary-module.md](./life-diary-module.md)（每日闲逛输入 + 8 路全景记忆聚合 + 成长里程碑/回忆杀 + 重吐槽碎碎念风格锚点 + 动态手绘手账配图 + 睡眠海马体整理）
 
 ---
@@ -21,7 +21,7 @@
 | **可选「脑嘴分离」层** | 换其他高助手腔模型时独立做熟人口语转译 | [`templates/mouth.mjs`](./templates/mouth.mjs) + [`templates/mouth-examples.json`](./templates/mouth-examples.json)（支持 DashScope / OpenAI 兼容 / Gemini 4 Hydrogen，默认可开关、超时自动回退） |
 | **独立「玩梗与接梗」模块** | AI 只会当百科科普、听不懂空耳黑话、认不出无字人脸梗图、定时抓老梗/小众梗 | **[`meme-engine-module.md`](./meme-engine-module.md)** + [`templates/surf-kb.mjs`](./templates/surf-kb.mjs) + [`templates/reverse-image.mjs`](./templates/reverse-image.mjs)：4 层查梗（含 B 站+Serper 并发交叉佐证）+ Google Lens 以图搜图 + `replies`/`playTip` 接梗不科普 + **3 档破圈热度×生命力定时扩库** + MemeCub 自动配图（0 常驻内存、平台解耦） |
 | **独立「实时语音通话」模块** | 机器人只能发离线语音条、端到端模型丢原声、打断重音、通话零工具无法查资料/记事 | **[`realtime-call-module.md`](./realtime-call-module.md)** + [`templates/call-engine.mjs`](./templates/call-engine.mjs) + [`templates/qq-call-adapter.mjs`](./templates/qq-call-adapter.mjs)：PulseAudio 双声卡物理零回声原生 QQ 接通 + 双层好友白名单 + 零工具轻量大脑 + **异步旁路工具**（180ms 快慢通道查天气/查梗/联网搜/记备忘，不降主通话速）+ 原声整句 SSE 拟人合成 + **80ms 预充 1x 节拍器**瞬时打断零重叠 + 聊天/通话双向记忆互通（仅 ~67 MB 内存） |
-| **独立「实时看屏陪聊」模块** | 语音聊电影/打游戏 AI 看不见画面、截图发聊太割裂、绑死单一平台 | **[`screen-vision-module.md`](./screen-vision-module.md)** + [`templates/screen-vision-engine.mjs`](./templates/screen-vision-engine.mjs) + [`templates/screen-web-endpoint.mjs`](./templates/screen-web-endpoint.mjs) + [`templates/qq-screen-adapter.mjs`](./templates/qq-screen-adapter.mjs)：平台无关看屏引擎（帧差节流/纯内存 3 帧环形池不落盘/随问随看与主动陪看吐槽）+ 本地 1080p 浏览器直连控制台（脱离 QQ 独立可用，通话中自动融合）+ QQ 屏幕共享适配层（原生看图 ~1.3s 零额外视觉 Key） |
+| **独立「实时看屏陪聊」模块** | 语音聊电影/打游戏看不见画面、视频解说混进麦导致误打断与卡顿、绑死单一平台 | **[`screen-vision-module.md`](./screen-vision-module.md)** + [`templates/screen-vision-engine.mjs`](./templates/screen-vision-engine.mjs) + [`templates/screen-audio-listener.mjs`](./templates/screen-audio-listener.mjs) + [`templates/screen-web-endpoint.mjs`](./templates/screen-web-endpoint.mjs) + [`templates/qq-screen-adapter.mjs`](./templates/qq-screen-adapter.mjs)：**物理三通道分离**（通道 1 普通 QQ 语音纯人声、通道 2 浏览器独立推 1080p 画面 + 二进制屏幕音频后台静默听译 45 秒滚动台词槽、通道 3 AI 语音零卡顿输出），纯内存不落盘，支持独立脱离 QQ 运行与 QQ 原生共享备选 |
 | **独立「自己的生活」与全景手账日记** | 说说只有一句话、冷冰冰流水账、记忆重复与过期乌龙、散文腔/鸡汤味、缺手绘插画与节气回忆 | **[`life-diary-module.md`](./life-diary-module.md)** + [`templates/qq-life.mjs`](./templates/qq-life.mjs) + [`templates/memory-consolidator.mjs`](./templates/memory-consolidator.mjs) + [`templates/weather-solar.mjs`](./templates/weather-solar.mjs) + [`templates/diary-examples.json`](./templates/diary-examples.json)：每日 2 次多渠道闲逛（B站/豆瓣/社区热议/播客/节气天气 + 限频宝藏安利）+ 8 路全景记忆与回忆杀纪念日引擎 + 重吐槽碎碎念风格锚点 + **动态手绘手账配图**（按氛围自动切涂鸦/水彩手账风 1–2 张）+ **夜间睡眠海马体记忆整理**（去重/日期锚定/过期归档，0 常驻内存） |
 | **私有资产库自动云端备份** | 梗库、梗图、记忆、日记、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` / `DIARY.md` 与 `memory/milestones.json` |
 
@@ -38,8 +38,9 @@
 ├── screen-vision-module.md       # 独立可解耦「实时看屏陪聊」模块指南（平台无关内核 + 本地超清 Web 端 + QQ 屏幕共享）
 ├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 8 路全景记忆 + 手绘手账日记 + 睡眠记忆整理
 └── templates/
-    ├── screen-vision-engine.mjs  # 平台无关实时看屏内核（帧差节流 / 纯内存环形池 / 三模式 / 双帧对比）
-    ├── screen-web-endpoint.mjs   # Endpoint B：独立 1080p 浏览器推屏端 + WS/HTTP API + 脱离 QQ 陪看语音播报
+    ├── screen-vision-engine.mjs  # 平台无关实时看屏内核（帧差节流 / 纯内存环形池 / 45s 屏幕台词槽 / 三模式）
+    ├── screen-audio-listener.mjs # 通道 2 独立屏幕音轨后台静默听译器（静音/BGM 自动休眠 / 整屏防回声 / 永不打断）
+    ├── screen-web-endpoint.mjs   # Endpoint B：物理三通道 1080p 浏览器推屏+推音端 + WS/HTTP API + 独立陪看语音播报
     ├── qq-screen-adapter.mjs     # Endpoint A：QQ 原生屏幕共享容器 X11 捕获适配层
     ├── qq-life.mjs               # 多渠道闲逛 + 8 路全景记忆/回忆杀 + 动态手绘手账日记审查发布
     ├── memory-consolidator.mjs   # 睡眠海马体记忆整理（去重合并、日期锚定、过期代谢归档，热写回桥接）

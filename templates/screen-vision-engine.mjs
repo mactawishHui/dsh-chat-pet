@@ -21,8 +21,11 @@ const WATCH_ON_RE = /(?:(?:开启|打开|进入|切到|切换).{0,4}(?:陪看|�
 const WATCH_QUIET_RE = /(?:安静看(?:片|电影|视频|剧)?|先别插嘴|先别说话|闭嘴看|我问你再说|关掉主动吐槽|关闭陪看|别主动说话)/;
 const SCREEN_OFF_RE = /(?:别看屏幕了|关掉看屏|关闭看屏|停止看屏|别看我桌面|退出看屏)/;
 
+const SCREEN_AUDIO_OFF_RE = /(?:别听(?:屏幕|视频|电影|游戏|电脑)声|关掉(?:屏幕|视频|电影|电脑)声音|关闭屏幕音轨|别听解说|静音屏幕)/;
+const SCREEN_AUDIO_ON_RE = /(?:听一下?(?:屏幕|视频|电影|游戏|电脑)声|打开(?:屏幕|视频|电影|电脑)声音|开启屏幕音轨|听解说)/;
+
 const COMPARE_INTENT_RE = /(刚才|刚刚|刚才那|上一步|上一幕|刚过去|怎么死的|怎么输的|怎么回事|发生了什么|反转|变化|哪里变了)/;
-const VISUAL_INTENT_RE = /(你看|看我|看看|屏幕|画面|桌面|电影|视频|台词|字幕|这人|这个人|角色|演员|主角|反派|这里|这个|这局|这把|这手|这张|牌|卡牌|血量|装备|打法|出什么|怎么打|啥意思|什么意思|谁演的|好不好看|帅不帅|笑死|你看这|帮我看|帮我瞅|瞄一眼)/;
+const VISUAL_INTENT_RE = /(你看|看我|看看|屏幕|画面|桌面|电影|视频|台词|字幕|解说|这人|这个人|角色|演员|主角|反派|这里|这个|这局|这把|这手|这张|牌|卡牌|血量|装备|打法|出什么|怎么打|啥意思|什么意思|谁演的|好不好看|帅不帅|笑死|你看这|帮我看|帮我瞅|瞄一眼)/;
 
 function computeLumaDiff(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length || !a.length) return null;
@@ -71,9 +74,23 @@ export function detectScreenModeCommand(utterance) {
   return null;
 }
 
+/**
+ * 解析语音/文字口令，判断用户是否要开关「通道 2：屏幕独立音轨」
+ */
+export function detectScreenAudioCommand(utterance) {
+  const t = String(utterance || '').trim();
+  if (!t || t.length < 3) return null;
+  if (SCREEN_AUDIO_OFF_RE.test(t)) return { enabled: false, label: '静音屏幕音轨' };
+  if (SCREEN_AUDIO_ON_RE.test(t)) return { enabled: true, label: '开启屏幕音轨' };
+  return null;
+}
+
 export class ScreenVisionEngine {
   constructor(opts = {}) {
     this.mode = SCREEN_MODES.has(opts.mode) ? opts.mode : 'on_demand';
+    this.audioEnabled = opts.audioEnabled !== false;
+    this.audioWindowMs = Number(opts.audioWindowMs ?? 45000);
+    this.maxAudioChars = Number(opts.maxAudioChars ?? 420);
     this.maxFrameAgeMs = Number(opts.maxFrameAgeMs ?? 45000);
     this.keyframeMinGapMs = Number(opts.keyframeMinGapMs ?? 4500);
     this.staticChangeThresh = Number(opts.staticChangeThresh ?? 0.035);
@@ -84,6 +101,8 @@ export class ScreenVisionEngine {
 
     // 事件回调
     this.onModeChange = opts.onModeChange || (() => {});
+    this.onAudioChange = opts.onAudioChange || (() => {});
+    this.onAudioTranscript = opts.onAudioTranscript || (() => {});
     this.onFrameAccepted = opts.onFrameAccepted || (() => {});
     this.onWatchCandidate = opts.onWatchCandidate || null;
     this.onActivity = opts.onActivity || (() => {});
@@ -98,6 +117,14 @@ export class ScreenVisionEngine {
     this._totalFramesIn = 0;
     this._totalKeyframes = 0;
     this._recentEvents = []; // [{ ts, kind, text }]
+
+    // 通道 2：屏幕独立音轨的纯内存滚动台词缓存（只作背景上下文，永不触发打断或抢话）
+    this._audioLines = []; // [{ ts, text, source }]
+    this._audioPartial = '';
+    this._audioPartialAt = 0;
+    this._lastAudioChunkAt = 0;
+    this._audioSurface = '';
+    this._totalAudioSegments = 0;
   }
 
   setMode(nextMode, reason = 'manual') {
@@ -115,6 +142,97 @@ export class ScreenVisionEngine {
     return this.mode;
   }
 
+  setAudioEnabled(enabled, reason = 'manual') {
+    const next = Boolean(enabled);
+    const prev = this.audioEnabled;
+    this.audioEnabled = next;
+    if (!next) this.clearAudio('audio_disabled');
+    if (prev !== next) {
+      this.log(`[screen-vision] 屏幕独立音轨: ${next ? '开启' : '关闭'} (${reason})`);
+      this._recordEvent('audio_mode', next ? '已开启通道 2 屏幕独立音轨听译' : '已静音通道 2 屏幕独立音轨');
+      this.onAudioChange(next, reason);
+    }
+    return this.audioEnabled;
+  }
+
+  noteAudioActivity(meta = {}) {
+    this._lastAudioChunkAt = Number(meta.ts) || Date.now();
+    if (meta.surface) this._audioSurface = String(meta.surface).slice(0, 24);
+  }
+
+  pushAudioTranscript(text, { isFinal = true, source = 'screen-audio', ts = Date.now() } = {}) {
+    if (this.mode === 'off' || !this.audioEnabled) return false;
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+    this._lastAudioChunkAt = ts;
+
+    if (!isFinal) {
+      this._audioPartial = clean.slice(0, 200);
+      this._audioPartialAt = ts;
+      this.onAudioTranscript({ text: this._audioPartial, isFinal: false, source, ts });
+      return true;
+    }
+
+    if (clean.replace(/[，,。！？!?、.\s]/g, '').length < 2) {
+      this._audioPartial = '';
+      return false;
+    }
+
+    // 避免与刚写入的最后一句完全重复
+    const prev = this._audioLines[this._audioLines.length - 1];
+    if (prev && prev.text === clean && ts - prev.ts < 8000) {
+      this._audioPartial = '';
+      return false;
+    }
+
+    this._audioLines.push({ ts, text: clean.slice(0, 220), source });
+    this._audioPartial = '';
+    this._audioPartialAt = 0;
+    this._totalAudioSegments += 1;
+    const cutoff = ts - this.audioWindowMs;
+    this._audioLines = this._audioLines.filter((x) => x.ts >= cutoff).slice(-14);
+    this.onAudioTranscript({ text: clean, isFinal: true, source, ts });
+    return true;
+  }
+
+  clearAudio(reason = 'manual') {
+    const had = Boolean(this._audioLines.length || this._audioPartial);
+    this._audioLines = [];
+    this._audioPartial = '';
+    this._audioPartialAt = 0;
+    this._lastAudioChunkAt = 0;
+    this._audioSurface = '';
+    if (had) {
+      this.log(`[screen-vision] 已清空屏幕音轨台词缓存 (${reason})`);
+    }
+  }
+
+  getRecentAudioContext(now = Date.now(), { maxAgeMs = this.audioWindowMs, maxChars = this.maxAudioChars } = {}) {
+    if (this.mode === 'off' || !this.audioEnabled) {
+      return { text: '', lineCount: 0, latestAgeSec: null, note: '' };
+    }
+    const cutoff = now - maxAgeMs;
+    this._audioLines = this._audioLines.filter((x) => x.ts >= cutoff);
+    const parts = this._audioLines.map((x) => x.text);
+    const hasFreshPartial = Boolean(this._audioPartial && now - this._audioPartialAt <= 5500);
+    if (hasFreshPartial && (!parts.length || !parts[parts.length - 1].endsWith(this._audioPartial))) {
+      parts.push(this._audioPartial);
+    }
+    if (!parts.length) {
+      return { text: '', lineCount: 0, latestAgeSec: null, note: '' };
+    }
+    let joined = parts.join(' ');
+    if (joined.length > maxChars) {
+      joined = '…' + joined.slice(-(maxChars - 1));
+    }
+    const latestTs = hasFreshPartial
+      ? this._audioPartialAt
+      : this._audioLines[this._audioLines.length - 1].ts;
+    const latestAgeSec = Math.max(0, Math.round((now - latestTs) / 1000));
+    const note = `[通道2·屏幕独立音轨（最近${Math.round(maxAgeMs / 1000)}秒视频/游戏里的旁白与台词，不是对方本人说的话，仅供参考剧情细节）：「${joined}」]`;
+    return { text: joined, lineCount: parts.length, latestAgeSec, note };
+  }
+
   modeLabel(m = this.mode) {
     if (m === 'watch_along') return '主动陪看吐槽';
     if (m === 'off') return '已暂停';
@@ -127,6 +245,7 @@ export class ScreenVisionEngine {
     this._keyframes = [];
     this._lastSentFrameId = 0;
     this._lastSentAt = 0;
+    this.clearAudio(reason);
     if (had) {
       this.log(`[screen-vision] 已清空内存帧缓存 (${reason})`);
       this._recordEvent('clear', '已停止共享并清空内存画面');
@@ -316,6 +435,7 @@ export class ScreenVisionEngine {
   getStatus() {
     const now = Date.now();
     const fresh = this.hasFreshFrame(now);
+    const audioCtx = this.getRecentAudioContext(now);
     return {
       mode: this.mode,
       modeLabel: this.modeLabel(),
@@ -329,6 +449,15 @@ export class ScreenVisionEngine {
       keyframesBuffered: this._keyframes.length,
       totalFramesIn: this._totalFramesIn,
       totalKeyframes: this._totalKeyframes,
+      audio: {
+        enabled: this.audioEnabled,
+        active: Boolean(this.audioEnabled && this._lastAudioChunkAt && now - this._lastAudioChunkAt < 8000),
+        surface: this._audioSurface || '',
+        bufferedLines: audioCtx.lineCount,
+        totalSegments: this._totalAudioSegments,
+        latestAgeSec: audioCtx.latestAgeSec,
+        latestSnippet: audioCtx.text.slice(-120)
+      },
       recentEvents: this._recentEvents.slice(-15)
     };
   }

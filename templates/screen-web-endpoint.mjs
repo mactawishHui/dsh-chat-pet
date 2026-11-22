@@ -1,20 +1,21 @@
 /**
- * screen-web-endpoint.mjs — Endpoint B：独立超清浏览器推屏端 + WebSocket + 脱离 QQ 的桌面陪看模式
+ * screen-web-endpoint.mjs — Endpoint B：物理三通道超清浏览器推屏端（画面 + 独立屏幕音轨 + 独立陪看）
  *
  * 设计亮点：
  *   - 挂载在任意本机 Node http.Server 上（默认与 qq-call.service 共用 127.0.0.1:3300，零新增常驻进程）
- *   - 严格仅绑定 127.0.0.1 + Token 鉴权，绝不暴露公网，屏幕截帧纯内存流转、绝不落盘
- *   - 浏览器端通过 getDisplayMedia 精确选择电影/游戏窗口，前端 Canvas 1fps 帧差过滤 + 1080p/720p JPEG 压缩推送
- *   - 双模式无缝衔接：
- *       1) 正在 QQ 语音通话中 → 画面自动融合进通话大脑（声走 QQ 电话，画走 1080p 超清直连）
- *       2) 未打 QQ 电话时 → 独立桌面陪看模式（内置轻量 DSH 多模态会话 + 可选本地原声 TTS 浏览器播报，完全不依赖 QQ！）
- *   - 同时暴露 HTTP API（POST /api/screen/frame、POST /api/screen/ask、GET /api/screen/status），方便 Mac/Win 脚本或 OBS 接入
+ *   - 严格仅绑定 127.0.0.1 + Token 鉴权，绝不暴露公网，画面与屏幕台词纯内存流转、绝不落盘
+ *   - 物理三通道分离：
+ *       · 通道 1（听你说话）：普通 QQ 语音通话入站（纯净麦克风，不勾设备音频，零误打断）
+ *       · 通道 2（看屏幕 + 听屏幕声音）：本端 getDisplayMedia({ video, audio }) 推送 1080p 画面 + 16kHz 独立屏幕音频（二进制 WS 帧），服务端后台静默听译最近 45 秒台词
+ *       · 通道 3（小鲸鲸说话）：普通 QQ 语音通话出站（零回声、免 LinuxQQ 软渲染、彻底不卡顿）
+ *   - 同时支持未打 QQ 电话时的独立桌面陪看模式，及 HTTP API（/api/screen/{status,mode,frame,audio-text,ask}）
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
-import { detectScreenModeCommand } from './screen-vision-engine.mjs';
+import { detectScreenModeCommand, detectScreenAudioCommand } from './screen-vision-engine.mjs';
+import { ScreenAudioListener } from './screen-audio-listener.mjs';
 
 const ROOT = '/opt/qq-bridge';
 
@@ -148,8 +149,9 @@ class StandaloneScreenCompanion {
         signal: AbortSignal.timeout(15000)
       });
       const j = await res.json().catch(() => null);
-      if (res.ok && j?.ok && j.file && fs.existsSync(j.file)) {
-        const buf = fs.readFileSync(j.file);
+      const wavPath = [j?.absPath, j?.file, j?.file ? path.join(ROOT, 'audio', j.file) : ''].find((p) => p && fs.existsSync(p));
+      if (res.ok && j?.ok && wavPath) {
+        const buf = fs.readFileSync(wavPath);
         return { mime: 'audio/wav', data: buf.toString('base64') };
       }
     } catch {}
@@ -200,9 +202,12 @@ function renderWebConsoleHtml() {
   .previewBox { position:relative; background:#010409; border:1px solid var(--line); border-radius:10px; overflow:hidden; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; }
   video { width:100%; height:100%; object-fit:contain; display:none; }
   .placeholder { color:var(--muted); font-size:13px; text-align:center; padding:16px; }
-  .meter { height:6px; background:#21262d; border-radius:999px; overflow:hidden; margin-top:10px; }
-  .meter > div { height:100%; width:0%; background:linear-gradient(90deg,#3fb950,#58a6ff,#f0883e); transition:width .25s; }
+  .meter { height:6px; background:#21262d; border-radius:999px; overflow:hidden; margin-top:8px; }
+  .meter > div { height:100%; width:0%; background:linear-gradient(90deg,#3fb950,#58a6ff,#f0883e); transition:width .18s; }
+  .meter.audio > div { background:linear-gradient(90deg,#a371f7,#58a6ff,#3fb950); }
   .stats { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:6px; }
+  .subTicker { margin-top:10px; padding:8px 10px; background:#0d1117; border:1px solid var(--line); border-radius:8px; font-size:12px; color:#c9d1d9; line-height:1.45; min-height:38px; }
+  .subTicker .tag { color:#a371f7; font-weight:600; margin-right:6px; }
   .chatBox { height:380px; overflow-y:auto; background:#0d1117; border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:10px; }
   .msg { font-size:13px; line-height:1.55; padding:8px 11px; border-radius:10px; max-width:92%; }
   .msg.ai { background:#1f6feb22; border:1px solid #388bfd44; align-self:flex-start; }
@@ -216,8 +221,8 @@ function renderWebConsoleHtml() {
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>🐳 小鲸鲸 · 实时看屏端点</h1>
-    <div class="sub">平台无关超清直连 · 纯内存环形缓冲不落盘 · 正在 QQ 通话时自动与语音融合</div>
+    <h1>🐳 小鲸鲸 · 物理三通道推屏端</h1>
+    <div class="sub">通道 1 走普通 QQ 语音只听你说话 · 通道 2 本页独立传 1080p 画面与视频音频 · 零落盘</div>
     <div class="row">
       <input id="token" type="password" placeholder="粘贴 console-token" style="flex:1;min-width:150px" />
       <button id="btnConn" class="primary">连接</button>
@@ -225,37 +230,44 @@ function renderWebConsoleHtml() {
       <span id="callPill" class="pill">独立陪看模式</span>
     </div>
     <div class="row">
-      <button id="btnShare" class="primary" disabled>选择屏幕 / 窗口</button>
+      <button id="btnShare" class="primary" disabled>选择屏幕 / 标签页</button>
       <button id="btnStop" class="danger" disabled>停止共享</button>
       <select id="resSel">
         <option value="960">720p 极速省流</option>
         <option value="1280" selected>1080p 超清看字幕/卡牌</option>
       </select>
-      <input id="labelInput" type="text" placeholder="标签(如 电影/KARDS)" style="width:140px" />
+      <input id="labelInput" type="text" placeholder="标签(如 电影/游戏)" style="width:130px" />
+    </div>
+    <div class="row" style="justify-content:space-between">
+      <label class="chk"><input id="wantAudioChk" type="checkbox" checked /> 同时采集屏幕/标签页独立音频（三通道）</label>
+      <button id="btnToggleAudio" style="padding:4px 10px;font-size:12px" disabled>🔊 屏幕音轨：开</button>
     </div>
     <div class="row">
       <span style="font-size:12px;color:var(--muted)">模式：</span>
       <button class="modeBtn active" data-mode="on_demand">随问随看</button>
       <button class="modeBtn" data-mode="watch_along">主动陪看吐槽</button>
       <button class="modeBtn" data-mode="off">暂停看屏</button>
+      <span id="audioPill" class="pill">音轨待机</span>
     </div>
     <div class="previewBox">
       <video id="vid" autoplay muted playsinline></video>
-      <div id="ph" class="placeholder">点击上方「选择屏幕 / 窗口」即可精准共享电影播放器或游戏窗口<br/>（画面静止时不发推理流量，断开即刻清空内存）</div>
+      <div id="ph" class="placeholder">点「选择屏幕 / 标签页」并在弹窗底部勾选「分享音频」即可开启物理三通道<br/>（画面与台词纯内存流转；建议戴耳机打普通 QQ 语音，彻底互不干扰）</div>
     </div>
-    <div class="meter"><div id="diffBar"></div></div>
+    <div class="meter" title="画面帧变化幅度"><div id="diffBar"></div></div>
+    <div class="meter audio" title="通道 2 屏幕独立音轨电平"><div id="audioBar"></div></div>
     <div class="stats">
       <span id="statLeft">待机</span>
       <span id="statRight">已推送 0 帧</span>
     </div>
+    <div id="subTicker" class="subTicker"><span class="tag">🎬 通道 2 屏幕台词</span><span id="subText">等待屏幕音频输入（仅作背景记忆，绝不打断你或小鲸鲸）</span></div>
   </div>
 
   <div class="card">
     <h1>💬 陪看互动与吐槽流</h1>
-    <div class="sub">通话中直接开口聊即可；没打电话也能在这儿随时问她，勾上语音可直接发声</div>
+    <div class="sub">QQ 语音通话中直接开口聊即可；没打电话也能在这儿问她，勾上语音可直接发声</div>
     <div id="chat" class="chatBox"></div>
     <div class="askRow">
-      <input id="askInput" type="text" placeholder="问点啥：比如「你看这手牌怎么打」「刚才那镜头笑死」…" />
+      <input id="askInput" type="text" placeholder="问点啥：比如「刚才他说啥来着」「这手牌怎么打」…" />
       <button id="btnAsk" class="primary">发送</button>
     </div>
     <div class="row" style="margin-top:8px;margin-bottom:0;justify-content:space-between">
@@ -272,7 +284,10 @@ const qsToken = new URLSearchParams(location.search).get('token') || '';
 if (qsToken) sessionStorage.setItem('screen_token', qsToken);
 $('token').value = sessionStorage.getItem('screen_token') || '';
 
-let ws = null, stream = null, timer = null, prevGrid = null, sentCount = 0, lastPushAt = 0, curMode = 'on_demand';
+let ws = null, stream = null, timer = null, prevGrid = null, sentCount = 0, lastPushAt = 0;
+let curMode = 'on_demand', audioEnabled = true, hasAudioTrack = false;
+let audioCtx = null, audioSrc = null, audioProc = null, zeroGain = null;
+let resamplePos = 0, pcmPending = [], pcmPendingLen = 0;
 const capC = $('capCanvas'), capCtx = capC.getContext('2d');
 const diffC = $('diffCanvas'), diffCtx = diffC.getContext('2d');
 
@@ -293,6 +308,103 @@ function setModeUi(m) {
   curMode = m;
   document.querySelectorAll('.modeBtn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
 }
+function setAudioUi(enabled) {
+  audioEnabled = Boolean(enabled);
+  $('btnToggleAudio').textContent = audioEnabled ? '🔊 屏幕音轨：开' : '🔇 屏幕音轨：关';
+  if (!hasAudioTrack) {
+    $('audioPill').textContent = '音轨待机';
+    $('audioPill').className = 'pill';
+  } else if (audioEnabled) {
+    $('audioPill').textContent = '🎬 通道 2 听译中';
+    $('audioPill').className = 'pill ok';
+  } else {
+    $('audioPill').textContent = '🔇 通道 2 已静音';
+    $('audioPill').className = 'pill warn';
+  }
+}
+function teardownAudioPipeline() {
+  hasAudioTrack = false;
+  pcmPending = []; pcmPendingLen = 0; resamplePos = 0;
+  if (audioProc) { try { audioProc.disconnect(); } catch {} audioProc = null; }
+  if (audioSrc) { try { audioSrc.disconnect(); } catch {} audioSrc = null; }
+  if (zeroGain) { try { zeroGain.disconnect(); } catch {} zeroGain = null; }
+  if (audioCtx) { try { audioCtx.close(); } catch {} audioCtx = null; }
+  $('audioBar').style.width = '0%';
+  $('btnToggleAudio').disabled = true;
+  setAudioUi(audioEnabled);
+}
+function startAudioPipeline(mediaStream, surface) {
+  teardownAudioPipeline();
+  const tracks = mediaStream.getAudioTracks();
+  if (!tracks.length) return false;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return false;
+  hasAudioTrack = true;
+  audioCtx = new AudioCtor();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  const audioOnlyStream = new MediaStream(tracks);
+  audioSrc = audioCtx.createMediaStreamSource(audioOnlyStream);
+  audioProc = audioCtx.createScriptProcessor(4096, 1, 1);
+  zeroGain = audioCtx.createGain();
+  zeroGain.gain.value = 0;
+  const ratio = audioCtx.sampleRate / 16000;
+  const TARGET_SAMPLES = 1600; // 100ms @ 16kHz
+
+  audioProc.onaudioprocess = (ev) => {
+    if (!ws || ws.readyState !== 1 || !audioEnabled || curMode === 'off') {
+      $('audioBar').style.width = '0%';
+      return;
+    }
+    const input = ev.inputBuffer.getChannelData(0);
+    // 计算实时电平显示
+    let sq = 0;
+    for (let i = 0; i < input.length; i += 4) sq += input[i] * input[i];
+    const rmsNorm = Math.sqrt(sq / Math.max(1, input.length / 4));
+    $('audioBar').style.width = Math.min(100, Math.round(rmsNorm * 380)) + '%';
+
+    // 线性重采样至 16kHz Int16LE
+    const out = [];
+    let pos = resamplePos;
+    while (pos < input.length) {
+      const idx = Math.floor(pos);
+      const frac = pos - idx;
+      const s0 = input[idx] || 0;
+      const s1 = input[Math.min(idx + 1, input.length - 1)] || s0;
+      const v = Math.max(-1, Math.min(1, s0 + (s1 - s0) * frac));
+      out.push(v < 0 ? Math.round(v * 32768) : Math.round(v * 32767));
+      pos += ratio;
+    }
+    resamplePos = pos - input.length;
+    if (!out.length) return;
+    pcmPending.push(out);
+    pcmPendingLen += out.length;
+
+    if (pcmPendingLen >= TARGET_SAMPLES) {
+      const merged = new Int16Array(pcmPendingLen);
+      let off = 0;
+      for (const arr of pcmPending) { merged.set(arr, off); off += arr.length; }
+      pcmPending = []; pcmPendingLen = 0;
+      if (ws.bufferedAmount < 64000) {
+        try { ws.send(merged.buffer); } catch {}
+      }
+    }
+  };
+
+  audioSrc.connect(audioProc);
+  audioProc.connect(zeroGain);
+  zeroGain.connect(audioCtx.destination);
+  tracks[0].onended = () => {
+    teardownAudioPipeline();
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'audio_meta', active: false }));
+  };
+  $('btnToggleAudio').disabled = false;
+  setAudioUi(audioEnabled);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'audio_meta', active: true, surface }));
+  }
+  return true;
+}
+
 function connectWs() {
   const tok = $('token').value.trim();
   if (!tok) { alert('请先输入 console-token'); return; }
@@ -303,7 +415,7 @@ function connectWs() {
   ws.onopen = () => {
     $('connPill').textContent = '已连接'; $('connPill').className = 'pill ok';
     $('btnShare').disabled = false;
-    addMsg('sys', '已连接到实时看屏核心引擎');
+    addMsg('sys', '已连接到物理三通道实时看屏核心引擎');
   };
   ws.onclose = (ev) => {
     $('connPill').textContent = ev.code === 4401 ? 'Token 错误' : '已断开';
@@ -315,11 +427,17 @@ function connectWs() {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.type === 'status') {
       if (msg.mode) setModeUi(msg.mode);
+      if (msg.screen && msg.screen.audio && typeof msg.screen.audio.enabled === 'boolean') {
+        setAudioUi(msg.screen.audio.enabled);
+      }
       if (msg.callState === 'in_call') {
-        $('callPill').textContent = '🎙️ 已融合 QQ 语音通话'; $('callPill').className = 'pill ok';
+        $('callPill').textContent = '🎙️ 已融合 QQ 语音（三通道）'; $('callPill').className = 'pill ok';
       } else {
         $('callPill').textContent = '💬 独立桌面陪看模式'; $('callPill').className = 'pill';
       }
+    } else if (msg.type === 'screen_audio') {
+      const prefix = msg.isFinal ? '' : '… ';
+      $('subText').textContent = prefix + (msg.text || '');
     } else if (msg.type === 'reply') {
       addMsg('ai', '🐳 ' + msg.text + (msg.ms ? '  (' + msg.ms + 'ms)' : ''));
       if (msg.audio && msg.audio.data) playWavBase64(msg.audio.data);
@@ -333,14 +451,38 @@ function connectWs() {
 
 async function startShare() {
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 2 }, audio: false });
+    const wantAudio = $('wantAudioChk').checked;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 2 },
+        audio: wantAudio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false
+      });
+    } catch (firstErr) {
+      if (wantAudio && (firstErr?.name === 'TypeError' || firstErr?.name === 'OverconstrainedError')) {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 2 }, audio: true });
+      } else {
+        throw firstErr;
+      }
+    }
     $('vid').srcObject = stream; $('vid').style.display = 'block'; $('ph').style.display = 'none';
     $('btnStop').disabled = false; $('btnShare').disabled = true;
     prevGrid = null; sentCount = 0; lastPushAt = 0;
-    stream.getVideoTracks()[0].onended = () => stopShare();
+    const vTrack = stream.getVideoTracks()[0];
+    const surface = vTrack?.getSettings?.()?.displaySurface || 'unknown';
+    vTrack.onended = () => stopShare();
     timer = setInterval(captureAndPush, 1000);
     setTimeout(captureAndPush, 250);
-    addMsg('sys', '已开始共享画面（纯内存流转，不保存截屏）');
+
+    const gotAudio = wantAudio && startAudioPipeline(stream, surface);
+    if (gotAudio) {
+      const surfLabel = surface === 'browser' ? '标签页独立音频（完全隔离）' : '系统音频（AI 说话时自动静音防回声）';
+      addMsg('sys', '已开启物理三通道：1080p 画面 + 通道 2 ' + surfLabel);
+      $('subText').textContent = '通道 2 已接通，正在静默等待视频/游戏台词…';
+    } else if (wantAudio) {
+      addMsg('sys', '已开始共享画面（未捕获到音频轨；若要让小鲸鲸听视频台词，重新共享时记得勾选浏览器弹窗底部的「分享音频」）');
+    } else {
+      addMsg('sys', '已开始共享纯画面（未开启屏幕音频）');
+    }
   } catch (e) {
     addMsg('sys', '取消或无法捕获屏幕：' + e.message);
   }
@@ -348,6 +490,7 @@ async function startShare() {
 
 function stopShare() {
   if (timer) { clearInterval(timer); timer = null; }
+  teardownAudioPipeline();
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   $('vid').srcObject = null; $('vid').style.display = 'none'; $('ph').style.display = 'block';
   $('btnStop').disabled = true;
@@ -356,6 +499,7 @@ function stopShare() {
     ws.send(JSON.stringify({ type: 'stop_share' }));
   }
   $('statLeft').textContent = '已停止共享';
+  $('subText').textContent = '已停止共享并清空内存台词缓存';
 }
 
 function captureAndPush() {
@@ -410,6 +554,11 @@ $('btnShare').onclick = startShare;
 $('btnStop').onclick = stopShare;
 $('btnAsk').onclick = sendAsk;
 $('btnClearLog').onclick = () => { $('chat').innerHTML = ''; };
+$('btnToggleAudio').onclick = () => {
+  const next = !audioEnabled;
+  setAudioUi(next);
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'set_audio', enabled: next }));
+};
 $('askInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendAsk(); });
 document.querySelectorAll('.modeBtn').forEach(b => b.onclick = () => {
   const m = b.dataset.mode;
@@ -430,12 +579,19 @@ export function attachScreenWebEndpoint(httpServer, {
   getCallEngine = () => null,
   getCallState = () => 'idle',
   getToken = () => '',
+  dashscopeKeyFile = '/opt/qq-tts/apikey.txt',
   dshBaseUrl = 'http://127.0.0.1:3080',
   dshAuthToken = '',
   ttsUrl = 'http://127.0.0.1:3210',
   log = console.log
 }) {
   const companion = new StandaloneScreenCompanion({ dshBaseUrl, dshAuthToken, ttsUrl, log });
+  const audioListener = new ScreenAudioListener({
+    screenEngine,
+    dashscopeKeyFile,
+    isAiSpeaking: () => Boolean(getCallEngine()?._isActuallySpeakingNow()),
+    log
+  });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
   const clients = new Set();
 
@@ -460,11 +616,35 @@ export function attachScreenWebEndpoint(httpServer, {
     }
   };
 
-  // 将引擎活动与模式变化实时广播给所有已连接控制台
+  // 当网页控制台在线时，监测 QQ 通话状态变化（如接通/挂断）并实时同步给前端状态徽章
+  let lastBroadcastCallState = getCallState();
+  const statusSyncTimer = setInterval(() => {
+    if (!clients.size) return;
+    const cur = getCallState();
+    if (cur !== lastBroadcastCallState) {
+      lastBroadcastCallState = cur;
+      broadcast({ type: 'status', mode: screenEngine.mode, callState: cur, screen: screenEngine.getStatus() });
+    }
+  }, 2000);
+  statusSyncTimer.unref?.();
+
+  // 将引擎活动、模式与通道 2 屏幕台词变化实时广播给所有已连接控制台
   const prevOnMode = screenEngine.onModeChange;
   screenEngine.onModeChange = (mode, reason) => {
     prevOnMode?.(mode, reason);
+    if (mode === 'off') audioListener.stop('mode_off');
     broadcast({ type: 'status', mode, callState: getCallState(), screen: screenEngine.getStatus() });
+  };
+  const prevOnAudio = screenEngine.onAudioChange;
+  screenEngine.onAudioChange = (enabled, reason) => {
+    prevOnAudio?.(enabled, reason);
+    if (!enabled) audioListener.stop('audio_off');
+    broadcast({ type: 'status', mode: screenEngine.mode, callState: getCallState(), screen: screenEngine.getStatus() });
+  };
+  const prevOnAudioTx = screenEngine.onAudioTranscript;
+  screenEngine.onAudioTranscript = (ev) => {
+    prevOnAudioTx?.(ev);
+    broadcast({ type: 'screen_audio', text: ev.text, isFinal: ev.isFinal, ts: ev.ts });
   };
   const prevOnAct = screenEngine.onActivity;
   screenEngine.onActivity = (ev) => {
@@ -483,11 +663,13 @@ export function attachScreenWebEndpoint(httpServer, {
     if (Date.now() - companion.lastActivityAt < 14000) return;
     const imageParts = screenEngine.buildWatchAlongParts(cand.frames);
     if (!imageParts.length) return;
-    const prompt = [
-      `[独立主动陪看模式${cand.label ? ` · ${cand.label}` : ''}：对方正在共享屏幕，画面刚发生明显变化。]`,
-      '如果画面里有真值得吐槽、夸一句或惊叹的细节（搞笑字幕、剧情反转、游戏翻车或神操作），用一句极短自然口语冒出来（≤24字）；画面平淡没啥好说的严格只输出 [SILENT]。'
-    ].join('\n');
-    const res = await companion.ask(prompt, { imageParts, silentIfToken: true }).catch(() => null);
+    const audioCtx = screenEngine.getRecentAudioContext();
+    const promptLines = [
+      `[独立主动陪看模式${cand.label ? ` · ${cand.label}` : ''}：对方正在共享屏幕，画面刚发生明显变化。]`
+    ];
+    if (audioCtx.note) promptLines.push(audioCtx.note);
+    promptLines.push('如果画面或刚才的屏幕台词里有真值得吐槽、夸一句或惊叹的细节（搞笑字幕、剧情反转、游戏翻车或神操作），用一句极短自然口语冒出来（≤24字）；画面平淡没啥好说的严格只输出 [SILENT]。');
+    const res = await companion.ask(promptLines.join('\n'), { imageParts, silentIfToken: true }).catch(() => null);
     if (res && !res.silent && res.text) {
       screenEngine.recordAiComment(res.text, 'watch_along');
       const audio = await companion.synthesizeVoice(res.text);
@@ -511,9 +693,17 @@ export function attachScreenWebEndpoint(httpServer, {
 
   wss.on('connection', (ws) => {
     clients.add(ws);
-    ws.send(JSON.stringify({ type: 'status', mode: screenEngine.mode, callState: getCallState(), screen: screenEngine.getStatus() }));
+    lastBroadcastCallState = getCallState();
+    ws.send(JSON.stringify({ type: 'status', mode: screenEngine.mode, callState: lastBroadcastCallState, screen: screenEngine.getStatus() }));
 
-    ws.on('message', async (raw) => {
+    ws.on('message', async (raw, isBinary) => {
+      // 二进制帧：通道 2 屏幕独立音轨（16kHz Int16LE 单声道 PCM），零 JSON/Base64 开销
+      if (isBinary) {
+        const pcmBuf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        audioListener.pushPcm16k(pcmBuf);
+        return;
+      }
+
       let msg;
       try { msg = JSON.parse(String(raw)); } catch { return; }
       if (msg.type === 'frame' && msg.data) {
@@ -526,14 +716,23 @@ export function attachScreenWebEndpoint(httpServer, {
           height: msg.height,
           label: msg.label || '桌面窗口'
         });
+      } else if (msg.type === 'audio_meta') {
+        if (msg.surface) audioListener.setSurface(msg.surface);
+        if (msg.active === false) audioListener.stop('client_audio_off');
+      } else if (msg.type === 'set_audio') {
+        screenEngine.setAudioEnabled(msg.enabled, 'web_ui');
       } else if (msg.type === 'set_mode') {
         screenEngine.setMode(msg.mode, 'web_ui');
       } else if (msg.type === 'stop_share') {
+        audioListener.stop('web_stop');
         if (screenEngine.getLatestFrame()?.source === 'web-direct') screenEngine.clear('web_stop');
+        else screenEngine.clearAudio('web_stop');
       } else if (msg.type === 'ask' && msg.text) {
         const q = String(msg.text).trim();
         const modeCmd = detectScreenModeCommand(q);
         if (modeCmd) screenEngine.setMode(modeCmd.mode, 'text_command');
+        const audioCmd = detectScreenAudioCommand(q);
+        if (audioCmd) screenEngine.setAudioEnabled(audioCmd.enabled, 'text_command');
 
         const callEng = getCallEngine();
         if (callEng && callEng.active) {
@@ -542,8 +741,12 @@ export function attachScreenWebEndpoint(httpServer, {
           return;
         }
         const picked = screenEngine.pickFramesForTurn(q, { force: true });
-        const prompt = picked.note ? `${picked.note}\n对方问：${q}` : q;
-        const res = await companion.ask(prompt, { imageParts: picked.imageParts }).catch((err) => ({ text: `看屏出错了：${err.message}`, ms: 0 }));
+        const audioCtx = screenEngine.getRecentAudioContext();
+        const promptParts = [];
+        if (picked.note) promptParts.push(picked.note);
+        if (audioCtx.note) promptParts.push(audioCtx.note);
+        promptParts.push(`对方问：${q}`);
+        const res = await companion.ask(promptParts.join('\n'), { imageParts: picked.imageParts }).catch((err) => ({ text: `看屏出错了：${err.message}`, ms: 0 }));
         if (res?.text) {
           screenEngine.recordAiComment(res.text, 'reply');
           const audio = msg.tts ? await companion.synthesizeVoice(res.text) : null;
@@ -554,8 +757,13 @@ export function attachScreenWebEndpoint(httpServer, {
 
     ws.on('close', () => {
       clients.delete(ws);
-      if (!clients.size && screenEngine.getLatestFrame()?.source === 'web-direct') {
-        screenEngine.clear('web_disconnect');
+      if (!clients.size) {
+        audioListener.stop('web_disconnect');
+        if (screenEngine.getLatestFrame()?.source === 'web-direct') {
+          screenEngine.clear('web_disconnect');
+        } else {
+          screenEngine.clearAudio('web_disconnect');
+        }
       }
     });
   });
@@ -582,9 +790,20 @@ export function attachScreenWebEndpoint(httpServer, {
       }
       if (req.method === 'POST' && urlObj.pathname === '/api/screen/mode') {
         const body = JSON.parse((await readBodyBuffer(req)).toString('utf8') || '{}');
-        const mode = screenEngine.setMode(body.mode, 'http_api');
+        const mode = body.mode ? screenEngine.setMode(body.mode, 'http_api') : screenEngine.mode;
+        if (typeof body.audioEnabled === 'boolean') screenEngine.setAudioEnabled(body.audioEnabled, 'http_api');
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, mode }));
+        res.end(JSON.stringify({ ok: true, mode, audioEnabled: screenEngine.audioEnabled }));
+        return true;
+      }
+      if (req.method === 'POST' && urlObj.pathname === '/api/screen/audio-text') {
+        const body = JSON.parse((await readBodyBuffer(req)).toString('utf8') || '{}');
+        const accepted = screenEngine.pushAudioTranscript(body.text, {
+          isFinal: body.isFinal !== false,
+          source: String(body.source || 'http-audio-text')
+        });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, accepted, audio: screenEngine.getStatus().audio }));
         return true;
       }
       if (req.method === 'POST' && urlObj.pathname === '/api/screen/frame') {
@@ -616,11 +835,15 @@ export function attachScreenWebEndpoint(httpServer, {
           return true;
         }
         const picked = screenEngine.pickFramesForTurn(q, { force: true });
-        const prompt = picked.note ? `${picked.note}\n对方问：${q}` : q;
-        const ans = await companion.ask(prompt, { imageParts: picked.imageParts });
+        const audioCtx = screenEngine.getRecentAudioContext();
+        const promptParts = [];
+        if (picked.note) promptParts.push(picked.note);
+        if (audioCtx.note) promptParts.push(audioCtx.note);
+        promptParts.push(`对方问：${q}`);
+        const ans = await companion.ask(promptParts.join('\n'), { imageParts: picked.imageParts });
         if (ans.text) screenEngine.recordAiComment(ans.text, 'reply');
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, frameCount: picked.frameCount, ...ans }));
+        res.end(JSON.stringify({ ok: true, frameCount: picked.frameCount, audioChars: audioCtx.text.length, ...ans }));
         return true;
       }
     }

@@ -88,6 +88,66 @@ function cleanSpokenText(raw) {
   return s;
 }
 
+const MODE_LABEL_CN = {
+  acappella: '清唱',
+  bedroom_bgm: '带伴奏',
+  ktv: '包厢伴奏',
+};
+
+function normalizeSongName(song) {
+  return String(song || '').toLowerCase().replace(/[\s《》【】"'.,!?，。！？\-—_]/g, '');
+}
+
+function songCacheIdFast(song, mode = 'bedroom_bgm') {
+  const norm = normalizeSongName(song);
+  if (!norm) return '';
+  const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
+  const hash = crypto.createHash('sha1').update(`${norm}|${safeMode}`).digest('hex').slice(0, 12);
+  return `${safeMode}-${hash}`;
+}
+
+export function hasCachedSongFast(songCacheDir, song, mode = 'bedroom_bgm') {
+  const cid = songCacheIdFast(song, mode);
+  if (!cid || !songCacheDir) return false;
+  try {
+    const st = fs.statSync(path.join(songCacheDir, `${cid}.wav`));
+    return st.isFile() && st.size >= 40 * 1024;
+  } catch {
+    return false;
+  }
+}
+
+export function listCachedSongsSummary(songCacheDir) {
+  if (!songCacheDir || !fs.existsSync(songCacheDir)) return '';
+  try {
+    const bySong = new Map();
+    for (const f of fs.readdirSync(songCacheDir)) {
+      if (!f.endsWith('.json')) continue;
+      const base = f.slice(0, -5);
+      const wavPath = path.join(songCacheDir, `${base}.wav`);
+      try {
+        const st = fs.statSync(wavPath);
+        if (!st.isFile() || st.size < 40 * 1024) continue;
+      } catch {
+        continue;
+      }
+      let meta = null;
+      try { meta = JSON.parse(fs.readFileSync(path.join(songCacheDir, f), 'utf8')); } catch {}
+      const title = String(meta?.song || '').replace(/[《》]/g, '').trim();
+      if (!title) continue;
+      const modeLabel = MODE_LABEL_CN[meta?.mode] || '带伴奏';
+      if (!bySong.has(title)) bySong.set(title, new Set());
+      bySong.get(title).add(modeLabel);
+    }
+    if (!bySong.size) return '';
+    return [...bySong.entries()]
+      .map(([title, modes]) => `《${title}》（${[...modes].join('/')}）`)
+      .join('、');
+  } catch {
+    return '';
+  }
+}
+
 /**
  * 解析通话大脑在回复末尾附带的隐形自发工具标记（零延迟软工具调用）：
  *   [LOOKUP:关键词]         -> 4层查梗（带近期对话上下文做同音纠偏）
@@ -518,10 +578,12 @@ export class RealtimeCallEngine {
     this.screenEngine = opts.screenEngine || null;
     this.log = opts.log || console.log;
 
-    // 异步旁路工具状态（绝不阻塞主通话延迟；唱歌独立序号，避免中途聊梗/查天气打断后台录歌）
+    // 异步旁路工具状态（绝不阻塞主通话延迟；唱歌独立序号与实时状态机，防重复点歌与“唱完啦”幻觉）
+    this.songCacheDir = opts.songCacheDir || '/opt/qq-bridge/audio/song-cache';
     this._pendingSidecarNotes = [];
     this._sidecarSeq = 0;
     this._singSeq = 0;
+    this._activeSingTask = null;
     this._playingSongLabel = '';
     this._lastTurnSidecarKind = '';
 
@@ -703,8 +765,13 @@ export class RealtimeCallEngine {
       if (this._playQueueBytes <= 0) {
         this._pacerActive = false;
         if (this._playingSongLabel) {
+          const finishedLabel = this._playingSongLabel;
           this._playingSongLabel = '';
           this._lastActivityAt = Date.now();
+          if (this._activeSingTask?.status === 'playing') {
+            this._activeSingTask.status = 'done';
+          }
+          this._pendingSidecarNotes.push(`[系统状态：你刚才已经在电话里把${finishedLabel}完整唱给对方听完了]`);
         }
         return;
       }
@@ -771,12 +838,20 @@ export class RealtimeCallEngine {
   }
 
   _formatContextPrimer(ctx) {
+    const cachedSongs = listCachedSongsSummary(this.songCacheDir);
+    const cachedDesc = cachedSongs
+      ? `你当前曲库里已练熟、张嘴就能 0 秒秒唱的歌：${cachedSongs}。`
+      : '你当前秒唱曲库里暂时没有已缓存的歌，新点的歌都需要后台现找伴奏和准备。';
     const parts = [
       `【当前准确时间】${formatBeijingNow()}（北京时间）\n⚠️ 时间校准铁律：下面「长期印象」里记录的多为历史信息，遇到任何日期（如生日、哪周去哪）务必先对照上面的当前日期——已经过去的事绝对不要当成“今天”或“快到了”来提！优先关注下面「最近 QQ 聊天」里的最新近况。`,
       `【隐形小工具（仅在确实需要时悄悄附在回复最末尾，系统会自动剥离绝不念出；平时闲聊不要乱加）】
 - 对方抛了你拿不准的网络梗、英文缩写、动漫/游戏黑话，或听起来像路边语音识别听岔的同音错字（如“哲学”听成“德学”）：别干巴巴只回“不知道”！先自然说一句过渡（如“诶等等你说的那个我卡壳了，瞄一眼手机哈”），末尾附 [LOOKUP:关键词]（结合上文更好懂时可写两个词，如 [LOOKUP:VAN 德学]）。
 - 对方问到你拿不准的新闻/影视/常识事实：自然过渡一句，末尾附 [SEARCH:关键词]。
-- 对方明确让你现在唱一首歌（不是泛泛问“你会唱歌吗”）：绝对不要问对方要音频或说“没伴奏唱不了”！直接自然答应一句（如“行啊我先找找调/翻下伴奏，咱先聊别的，好了直接唱给你听”），末尾附 [SING:模式|歌名|歌手]（模式填 acappella 清唱 / bedroom_bgm 带伴奏 / ktv 包厢；没提歌手留空；对方要你现编原创歌则歌名填 原创），系统会自动搜原唱伴奏或命中秒唱曲库直接唱出来。`
+- 【实时通话点歌铁律（极其重要，严禁假装唱完！）】${cachedDesc}
+  1) 对方明确让你现在唱一首歌（不是泛泛问“你会唱歌吗”）时：绝对不要问对方要音频或说“没伴奏唱不了”！末尾附 [SING:模式|歌名|歌手]（模式填 acappella 清唱 / bedroom_bgm 带伴奏 / ktv 包厢；没提歌手留空；现编原创则歌名填 原创）。
+  2) 如果对方点的是上面**已在秒唱曲库里且模式一致**的歌：直接爽快答应“这首我熟，张嘴就来，你听着哈”（说完 0 秒开唱）。
+  3) 如果对方点的是**不在曲库里的新歌、新模式或原创歌**：**必须先如实告知需要等一两分钟**（例如“这首我还没练熟，现找伴奏和准备大概得等两三分钟呢，咱们先聊点别的，弄好了我直接唱给你听；要是等不及挂了电话我录完发你 QQ 语音”），绝不要说“这就来了你听听看”让对方干等！
+  4) **严禁幻觉说“唱完啦”**：只要系统提示歌曲“仍在后台准备中”，说明一秒都还没开唱，绝对不要说“唱完啦/咋样/刚刚唱的”，也不要重复输出 [SING:...]！只有真正唱进听筒并收到“已完整唱完”提示后才能聊唱后感。`
     ];
     if (ctx?.impression) {
       parts.push(`【你对「${this.callerName}」的长期印象（历史累积，注意核对日期）】\n${ctx.impression}`);
@@ -848,8 +923,18 @@ export class RealtimeCallEngine {
         return;
       }
 
-      // 沉默防忘挂提醒（严格单次触发，避免重复喊挂断）
+      // 沉默防忘挂提醒（后台正在准备新歌期间绝不触发沉默自动挂断，满 45s 静默时主动安抚一句）
       if (!this._isActuallySpeakingNow() && !this._inSpeech && !this._hangupTriggered) {
+        if (this._activeSingTask?.status === 'preparing') {
+          if (idleSec >= 45 && !this._activeSingTask.waitNotified) {
+            this._activeSingTask.waitNotified = true;
+            this._lastActivityAt = now;
+            const songLabel = this._activeSingTask.song ? `《${this._activeSingTask.song}》` : '这首歌';
+            this.log(`[call-sidecar] ⏳ 新歌${songLabel}准备中且静默 ${Math.round(idleSec)}s，主动安抚对方`);
+            this._speakTextDirect(`还在哈，刚那首${songLabel}还在后台弄伴奏和调声卡呢，稍微再等一小会儿，咱也可以先聊点别的。`);
+          }
+          return;
+        }
         if (!this._askedStillThere && idleSec >= this.silenceAskSec) {
           this._askedStillThere = true;
           this.log(`[call-engine] 沉默 ${Math.round(idleSec)}s，主动询问还在吗`);
@@ -1014,6 +1099,9 @@ export class RealtimeCallEngine {
       if (this._playingSongLabel) {
         this._lastInterruptedContext = `[提示：你刚才正在电话里给对方唱${this._playingSongLabel}，唱到一半被对方开口打断了，直接顺着对方的新话自然接下去，别道歉也别硬继续唱]`;
         this._playingSongLabel = '';
+        if (this._activeSingTask?.status === 'playing') {
+          this._activeSingTask.status = 'interrupted';
+        }
       } else {
         const full = cleanSpokenText(this._currentReplyText);
         if (full && this._totalQueuedBytesThisTurn > 0) {
@@ -1080,6 +1168,10 @@ export class RealtimeCallEngine {
     }
     if (this._pendingSidecarNotes.length) {
       notes.push(...this._pendingSidecarNotes.splice(0));
+    }
+    const activeSingNote = this._buildActiveSingNote();
+    if (activeSingNote) {
+      notes.push(activeSingNote);
     }
     const recentUserContext = this.transcript
       .filter((x) => x.role === 'user')
@@ -1191,10 +1283,27 @@ export class RealtimeCallEngine {
     return Boolean(spoken);
   }
 
+  _buildActiveSingNote() {
+    const t = this._activeSingTask;
+    if (!t) return '';
+    if (t.status === 'preparing') {
+      const elapsedSec = Math.max(1, Math.round((Date.now() - t.startedAt) / 1000));
+      const modeCn = MODE_LABEL_CN[t.mode] || t.mode;
+      return `[唱歌实时状态：你刚才答应唱的「${t.label}」（${modeCn}）**目前仍在后台现找伴奏和准备中**（已准备 ${elapsedSec} 秒，冷启动新歌一般需 1.5~3 分钟），**一秒都还没有开唱，绝对没有唱完！**严禁说“唱完啦/咋样/刚刚唱的”，也严禁重复输出 [SING:...]！如果对方只是“嗯”或在等你，自然告诉对方还在弄伴奏/大概还要一小会儿，先拉着随便聊点别的别冷场。]`;
+    }
+    if (t.status === 'failed' && !t.reported) {
+      t.reported = true;
+      return `[唱歌实时状态：刚才那首「${t.label}」后台准备失败（${t.error || '网络超时'}），并没有唱出来]`;
+    }
+    return '';
+  }
+
   async askFromScreenText(text) {
     if (!this.active || this._ending || !String(text || '').trim()) return '';
     const q = String(text).trim();
     const notes = [];
+    const activeSingNote = this._buildActiveSingNote();
+    if (activeSingNote) notes.push(activeSingNote);
     let imageParts = [];
     if (this.screenEngine) {
       const audioCmd = detectScreenAudioCommand(q);
@@ -1235,30 +1344,88 @@ export class RealtimeCallEngine {
    * 由大脑回复末尾隐形标记自发拉起的异步旁路（[LOOKUP] / [SEARCH] / [SING]）
    */
   _dispatchBrainSidecar(task) {
-    if (!this.active || this._ending || !this.onSidecarTask || !task) return;
+    if (!this.active || this._ending || !this.onSidecarTask || !task) return null;
     if (task.kind === this._lastTurnSidecarKind) {
       this.log(`[call-sidecar] 跳过大脑重复触发(${task.kind}): ${task.query}`);
-      return;
+      return null;
     }
     this._lastTurnSidecarKind = task.kind;
     const scStart = Date.now();
     if (task.kind === 'sing') {
+      const isCached = !task.isOriginal && hasCachedSongFast(this.songCacheDir, task.song, task.mode);
+      const normSong = normalizeSongName(task.song);
+      const cur = this._activeSingTask;
+      const samePreparing = Boolean(
+        cur &&
+        cur.status === 'preparing' &&
+        !isCached &&
+        (task.isOriginal ? cur.isOriginal : (normSong && normSong === cur.normSong))
+      );
+      if (samePreparing) {
+        const elapsedSec = Math.max(1, Math.round((Date.now() - cur.startedAt) / 1000));
+        this.log(`[call-sidecar] 跳过重复点歌(${task.mode}): ${task.query}（已在后台准备中 ${elapsedSec}s）`);
+        return { kind: 'sing', started: false, deduped: true, cached: false, task: cur };
+      }
+
       const singSeq = ++this._singSeq;
-      this.log(`[call-sidecar] 🎤 大脑自发点歌(${task.mode}): ${task.query}`);
+      const singTask = {
+        seq: singSeq,
+        normSong,
+        song: task.song || '',
+        artist: task.artist || '',
+        mode: task.mode || 'bedroom_bgm',
+        isOriginal: Boolean(task.isOriginal),
+        label: task.label,
+        cached: isCached,
+        status: 'preparing',
+        startedAt: scStart,
+        waitNotified: false,
+        reported: false,
+        error: '',
+      };
+      this._activeSingTask = singTask;
+      const taskWithSeq = { ...task, seq: singSeq, cachedHint: isCached };
+      this.log(`[call-sidecar] 🎤 大脑自发点歌(${task.mode}${isCached ? ', ⚡曲库命中' : ', ⏳现找新歌'}): ${task.query}`);
       Promise.resolve()
-        .then(() => this.onSidecarTask(task))
+        .then(() => this.onSidecarTask(taskWithSeq))
         .then((res) => {
-          if (!res) return;
+          if (singSeq !== this._singSeq) return; // 已被更新的点歌覆盖，静默丢弃旧回调
+          if (!res) {
+            if (this._activeSingTask?.seq === singSeq && this._activeSingTask.status === 'preparing') {
+              this._activeSingTask.status = 'failed';
+              this._activeSingTask.error = '未返回有效音频';
+            }
+            return;
+          }
           if (typeof res === 'object' && res.type === 'audio' && res.file) {
-            this._deliverSidecarAudio(task, res, singSeq, Date.now() - scStart);
+            this._deliverSidecarAudio(taskWithSeq, res, singSeq, Date.now() - scStart);
           } else if (typeof res === 'string' && res.trim()) {
-            this._deliverSidecarResult(task, res.trim(), this._sidecarSeq);
+            const msg = res.trim();
+            if (this._activeSingTask?.seq === singSeq) {
+              this._activeSingTask.status = 'failed';
+              this._activeSingTask.error = msg;
+              this._activeSingTask.reported = true;
+            }
+            this._deliverSidecarResult(taskWithSeq, msg, this._sidecarSeq);
           }
         })
         .catch((err) => {
-          this.log(`[call-sidecar] 点歌失败: ${err?.message ?? err}`);
+          const msg = String(err?.message ?? err).slice(0, 140);
+          this.log(`[call-sidecar] 点歌失败: ${msg}`);
+          if (singSeq !== this._singSeq) return;
+          const songLabel = task.song ? `《${task.song}》` : '这首歌';
+          if (this._activeSingTask?.seq === singSeq) {
+            this._activeSingTask.status = 'failed';
+            this._activeSingTask.error = msg;
+            this._activeSingTask.reported = true;
+          }
+          this._deliverSidecarResult(
+            taskWithSeq,
+            `刚准备${songLabel}时云端网络卡壳超时了，没能唱成，要不你先点首我曲库里熟的歌`,
+            this._sidecarSeq
+          );
         });
-      return;
+      return { kind: 'sing', started: true, deduped: false, cached: isCached, seq: singSeq, task: singTask };
     }
 
     const scSeq = ++this._sidecarSeq;
@@ -1274,6 +1441,7 @@ export class RealtimeCallEngine {
       .catch((err) => {
         this.log(`[call-sidecar] 大脑自发执行失败(${task.kind}): ${err?.message ?? err}`);
       });
+    return { kind: task.kind, started: true };
   }
 
   /**
@@ -1303,19 +1471,26 @@ export class RealtimeCallEngine {
       pcm = readWavPcm24k(audioRes.file);
     } catch (err) {
       this.log(`[call-sidecar] 读取唱歌 WAV 失败: ${err?.message ?? err}`);
+      if (this._activeSingTask?.seq === singSeq) {
+        this._activeSingTask.status = 'failed';
+        this._activeSingTask.error = '音频读取失败';
+      }
       return;
     }
     if (!pcm || pcm.length < PCM24K_BYTES_PER_MS * 500) return;
 
     // 后台渲染耗时超过 6 秒时先自然说一句提示再开唱；秒唱缓存刚答应完直接开唱！
     if (!audioRes.cached && elapsedMs > 6000) {
-      await this._speakTextDirect(`诶，刚答应唱的那首${songLabel}准备好了，听着哈。`);
+      await this._speakTextDirect(`诶，刚那首${songLabel}弄好啦，听着哈。`);
       if (!this.active || this._ending || this._inSpeech || singSeq !== this._singSeq) return;
       this._enqueueAudioOut(Buffer.alloc(PCM24K_BYTES_PER_MS * 260));
     } else {
       this._enqueueAudioOut(Buffer.alloc(PCM24K_BYTES_PER_MS * 220));
     }
 
+    if (this._activeSingTask?.seq === singSeq) {
+      this._activeSingTask.status = 'playing';
+    }
     this._playingSongLabel = songLabel;
     this._aiHasSpokenThisTurn = true;
     this._lastActivityAt = Date.now();
@@ -1400,14 +1575,36 @@ export class RealtimeCallEngine {
       const wantHangup = !isWatchAlong && (/\[HANGUP\]/i.test(fullReply) || (GOODBYE_RE.test(userUtterance) && AI_GOODBYE_RE.test(cleanSpokenText(fullReply))));
       const recentCtx = this.transcript.filter((x) => x.role === 'user').slice(-3).map((x) => x.text).join(' | ');
       const brainSidecar = !isGreeting && !isWatchAlong ? parseBrainSidecarTag(fullReply, recentCtx) : null;
-      if (brainSidecar) {
-        this._dispatchBrainSidecar(brainSidecar);
-      }
-      const spoken = cleanSpokenText(fullReply);
+      const sidecarAction = brainSidecar ? this._dispatchBrainSidecar(brainSidecar) : null;
+      let spoken = cleanSpokenText(fullReply);
       if (!spoken) {
         if (fillerTimer) clearTimeout(fillerTimer);
         if (mySeq === this._turnSeq) this._aiThinking = false;
         return '';
+      }
+
+      // 唱歌口播硬护栏（彻底杜绝“新歌不说要等”与“还没唱就幻觉说唱完啦”）
+      if (!isGreeting && !isWatchAlong) {
+        const waitMentioned = /(分钟|一会儿|等一|等会|等我|稍等|先聊|准备|找一下|练一下|慢一点|需要点时间|挂了.*发|发.*语音|还得等)/.test(spoken);
+        if (sidecarAction?.kind === 'sing' && sidecarAction.started && !sidecarAction.cached && !waitMentioned) {
+          // 未命中秒唱曲库的新歌：若模型忘了提醒需要等待，直接自动补上自然告知，绝不让对方干等
+          spoken = spoken.replace(/[，,、\s]*(?:你听好了|你听听看|你听着|我这就来了|这就来了)[啊呀哈吧哦。！!]*$/g, '').trim();
+          const tail = spoken && !/[。！？!?]$/.test(spoken) ? '。' : '';
+          spoken = `${spoken}${tail}不过这首我还没练熟，现找伴奏和准备大概要等两三分钟呢，咱们先聊会儿天，弄好了我直接唱给你听。`;
+          this.log('[call-sidecar] ⏳ 新歌未命中秒唱缓存，已自动补充等待提示');
+        } else if (sidecarAction?.kind === 'sing' && sidecarAction.deduped && !waitMentioned) {
+          const songLabel = sidecarAction.task?.song ? `《${sidecarAction.task.song}》` : '那首歌';
+          spoken = `别急哈，刚才那首${songLabel}已经在后台准备着呢，还得等一小会儿，弄好我就直接开唱。`;
+          this.log('[call-sidecar] 🛡️ 拦截重复点歌假开唱口播，改为如实告知仍在准备');
+        } else if (
+          this._activeSingTask?.status === 'preparing' &&
+          /(唱完啦|唱完了|刚唱的|刚刚唱的|听完了吗|唱得咋样|唱得怎么样|还行吧.*味)/.test(spoken) &&
+          !/(没唱完|还没唱|还没开唱|没唱呢)/.test(spoken)
+        ) {
+          const songLabel = this._activeSingTask.song ? `《${this._activeSingTask.song}》` : '那首歌';
+          spoken = `还没开唱呢，刚那首${songLabel}还在后台弄伴奏，大概还得等一两分钟，咱先聊点别的哈。`;
+          this.log('[call-sidecar] 🛡️ 拦截“唱完啦”幻觉（歌曲仍在后台准备中）');
+        }
       }
 
       this._pendingUserUtterance = '';

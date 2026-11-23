@@ -815,11 +815,16 @@ class NativeQQCallDaemon {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(600000),
+            signal: AbortSignal.timeout(780000),
           });
           const gen = await res.json().catch(() => ({}));
           if (!res.ok || !gen.ok || !gen.file) {
-            return `刚想给你唱${task.song ? `《${task.song}》` : '这首歌'}，结果伴奏没找着，回头我练熟了再补唱`;
+            const errMsg = String(gen?.error || `HTTP ${res.status}`).slice(0, 180);
+            log(`[call-adapter] 唱歌接口返回失败 (${task.label}): ${errMsg}`);
+            if (/未找到|搜不到|暂无|歌名|找不到/.test(errMsg)) {
+              return `刚搜了一圈没找着${task.song ? `《${task.song}》` : '这首歌'}的原唱伴奏，要不换一首？`;
+            }
+            return `刚准备${task.song ? `《${task.song}》` : '这首歌'}的时候云端处理卡壳超时了，这首我先欠着，要不你先点首我曲库里熟的歌`;
           }
           // 若仍在同一通电话中 -> 返回 audio 对象交给 call-engine 在安静空档直接唱进听筒！
           if (this.state === 'in_call' && this.engine === originEngine) {
@@ -831,7 +836,11 @@ class NativeQQCallDaemon {
               label: task.label,
             };
           }
-          // 若渲染完成前电话已挂断 -> 自动转成一条 QQ 语音发到对方私聊，绝不白跑！
+          // 若渲染完成前电话已挂断 -> 仅把最新一次点歌转成 QQ 语音发到对方私聊（忽略已被覆盖的旧重复请求）
+          if (task.seq && originEngine && task.seq !== originEngine._singSeq) {
+            log(`[call-adapter] 电话已挂断，跳过已被覆盖的旧点歌 ${task.label} (seq=${task.seq}/${originEngine._singSeq})`);
+            return '';
+          }
           try {
             const token = readConsoleToken();
             const sendRes = await fetch(`${cfg.bridgeBase}/api/send/voice`, {

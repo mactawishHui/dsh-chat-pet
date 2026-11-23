@@ -36,13 +36,19 @@ const CONFIG = {
   rvcSlimZip: process.env.RVC_SLIM_ZIP || '/opt/qq-cover/slim.zip',
   workRoot: process.env.SING_WORK_ROOT || '/opt/qq-cover/work',
   songCacheDir: process.env.SING_CACHE_DIR || '/opt/qq-bridge/audio/song-cache',
-  songCacheMax: Number(process.env.SING_CACHE_MAX || 15),
+  songCacheMax: Number(process.env.SING_CACHE_MAX || 60),
+  curatedCatalogPath: process.env.SING_CURATED_CATALOG || '/opt/qq-cover/curated-songs-catalog.json',
   humanizerPy: process.env.HUMANIZER_PY || '/opt/qq-cover/venv/bin/python',
   humanizerScript: process.env.HUMANIZER_SCRIPT || '/opt/qq-cover/vocal-humanizer.py',
   ttsBaseUrl: (process.env.TTS_BASE_URL || 'http://127.0.0.1:3210').replace(/\/+$/, ''),
   ffmpegBin: process.env.FFMPEG_BIN || 'ffmpeg',
   ffprobeBin: process.env.FFPROBE_BIN || 'ffprobe',
+  replicateProxy: String(process.env.REPLICATE_PROXY || '').trim(),
 };
+
+function isReplicateUrl(url) {
+  return /^https?:\/\/([^/]+\.)?replicate\.(com|delivery)\//i.test(String(url || ''));
+}
 
 const BILI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
 
@@ -112,19 +118,36 @@ async function jfetch(url, opts = {}, tries = 4) {
   throw new Error(`HTTP 请求失败: ${last?.message ?? last}`);
 }
 
-async function downloadFile(url, dest, headers = {}, tries = 5) {
+async function downloadFile(url, dest, headers = {}, tries = 4) {
+  const headerArgs = [];
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (v !== undefined && v !== null && String(v) !== '') {
+      headerArgs.push('-H', `${k}: ${v}`);
+    }
+  }
+  const useProxyFirst = Boolean(CONFIG.replicateProxy && isReplicateUrl(url));
   let last;
   for (let i = 0; i < tries; i++) {
+    // 针对 Replicate 国际 CDN：前几次优先走可选 REPLICATE_PROXY 加速，最后一次兜底直连；国内源（B站等）强制直连
+    const proxyArgs = (useProxyFirst && i < tries - 1)
+      ? ['-x', CONFIG.replicateProxy]
+      : ['--noproxy', '*'];
     try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(180000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (!buf.length) throw new Error('下载内容为空');
-      fs.writeFileSync(dest, buf);
+      await execAsync('curl', [
+        '-fsSL', '--max-time', '180', '--connect-timeout', '20',
+        ...proxyArgs,
+        ...headerArgs,
+        '-o', dest,
+        String(url),
+      ], { timeout: 195000 });
+      if (!fs.existsSync(dest) || fs.statSync(dest).size < 16) {
+        throw new Error('下载内容为空');
+      }
       return dest;
     } catch (e) {
       last = e;
-      await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+      try { fs.unlinkSync(dest); } catch {}
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
     }
   }
   throw new Error(`下载失败(${tries}次): ${last?.message ?? last}`);
@@ -139,15 +162,29 @@ export async function ensureRvcModelUrl(log = console.error) {
     const tok = getReplicateToken();
     const H = { authorization: `Bearer ${tok}` };
 
-    // 1. 先查缓存文件，距离过期 >30 分钟且 HEAD 200 直接复用
+    // 1. 先查缓存文件，距离过期 >30 分钟且 curl HEAD 存活（支持可选 REPLICATE_PROXY）直接复用，杜绝误判重传 51MB 声模！
     try {
       const cached = JSON.parse(fs.readFileSync(CONFIG.rvcModelJson, 'utf8'));
       const url = String(cached?.url || '').trim();
       const expMs = cached?.expires_at ? Date.parse(cached.expires_at) : 0;
       const notExpired = !expMs || expMs - Date.now() > 30 * 60 * 1000;
       if (url && notExpired) {
-        const head = await fetch(url, { method: 'HEAD', headers: H, signal: AbortSignal.timeout(12000) }).catch(() => null);
-        if (head && head.ok) return url;
+        const checkHead = async (useProxy) => {
+          const pArgs = useProxy && CONFIG.replicateProxy ? ['-x', CONFIG.replicateProxy] : ['--noproxy', '*'];
+          const { stdout } = await execAsync('curl', [
+            '-sS', '-I', '-o', '/dev/null', '-w', '%{http_code}',
+            '--max-time', '15', '--connect-timeout', '10',
+            ...pArgs,
+            '-H', `Authorization: Bearer ${tok}`,
+            url,
+          ], { timeout: 20000 });
+          return Number(stdout.trim()) || 0;
+        };
+        let code = await checkHead(true).catch(() => 0);
+        if (!code && CONFIG.replicateProxy) code = await checkHead(false).catch(() => 0);
+        if (code >= 200 && code < 400) return url;
+        // 若只是瞬时网络抖动(code=0)且离过期还有 >2 小时，沿用缓存链接避免白传 51MB
+        if (!code && expMs && expMs - Date.now() > 2 * 3600 * 1000) return url;
       }
     } catch {}
 
@@ -156,8 +193,10 @@ export async function ensureRvcModelUrl(log = console.error) {
       throw new Error(`找不到 RVC 声模包: ${CONFIG.rvcSlimZip}`);
     }
     log(`[sing-engine] RVC 声模链接已过期，正在通过 curl 重新上传 ${path.basename(CONFIG.rvcSlimZip)}…`);
+    const proxyArgs = CONFIG.replicateProxy ? ['-x', CONFIG.replicateProxy] : [];
     const { stdout } = await execAsync('curl', [
       '-sS', '--max-time', '420',
+      ...proxyArgs,
       '-X', 'POST', 'https://api.replicate.com/v1/files',
       '-H', `Authorization: Bearer ${tok}`,
       '-F', `content=@${CONFIG.rvcSlimZip};type=application/zip`,
@@ -181,18 +220,32 @@ export async function ensureRvcModelUrl(log = console.error) {
   return _modelRefreshLock;
 }
 
-async function uploadToReplicate(filePath, mime = 'audio/wav') {
+async function uploadToReplicate(filePath, mime = 'audio/wav', tries = 3) {
   const tok = getReplicateToken();
-  const fd = new FormData();
-  fd.append('content', new Blob([fs.readFileSync(filePath)], { type: mime }), path.basename(filePath));
-  const r = await jfetch('https://api.replicate.com/v1/files', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${tok}` },
-    body: fd,
-    timeoutMs: 180000,
-  });
-  if (!r.ok || !r.body?.urls?.get) throw new Error(`Replicate 上传失败 HTTP ${r.status}`);
-  return r.body.urls.get;
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    const proxyArgs = (CONFIG.replicateProxy && i < tries - 1)
+      ? ['-x', CONFIG.replicateProxy]
+      : ['--noproxy', '*'];
+    try {
+      // 使用 curl 稳定流式上传（支持可选 REPLICATE_PROXY 加速，避免低带宽云主机多 MB 断链）
+      const { stdout } = await execAsync('curl', [
+        '-sS', '--max-time', '180', '--connect-timeout', '20',
+        ...proxyArgs,
+        '-X', 'POST', 'https://api.replicate.com/v1/files',
+        '-H', `Authorization: Bearer ${tok}`,
+        '-F', `content=@${filePath};type=${mime}`,
+      ], { timeout: 195000 });
+      const parsed = JSON.parse(stdout || '{}');
+      const url = parsed?.urls?.get;
+      if (!url) throw new Error(`Replicate 上传返回异常: ${String(stdout || '').slice(0, 180)}`);
+      return url;
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+  throw new Error(`Replicate 上传失败(${tries}次): ${lastErr?.message ?? lastErr}`);
 }
 
 async function runReplicateModel(model, input, label, maxPolls = 200) {
@@ -229,7 +282,28 @@ function parseBiliDuration(durStr) {
   return parts[0] || 0;
 }
 
-export async function searchAndDownloadBilibiliSong({ song, artist = '', destPath, log = console.error }) {
+function lookupCuratedBvid(cleanSong, cleanArtist = '') {
+  try {
+    if (!CONFIG.curatedCatalogPath || !fs.existsSync(CONFIG.curatedCatalogPath)) return null;
+    const raw = JSON.parse(fs.readFileSync(CONFIG.curatedCatalogPath, 'utf8'));
+    const list = Array.isArray(raw?.songs) ? raw.songs : (Array.isArray(raw) ? raw : []);
+    const norm = (s) => String(s || '').toLowerCase().replace(/[\s《》【】"'.,!?，。！？\-—_]/g, '');
+    const targetSong = norm(cleanSong);
+    const targetArtist = norm(cleanArtist);
+    if (!targetSong) return null;
+    const matches = list.filter((it) => it && it.bvid && it.qaStatus !== 'rejected' && norm(it.song) === targetSong);
+    if (!matches.length) return null;
+    if (targetArtist) {
+      const exactArtist = matches.find((it) => norm(it.artist).includes(targetArtist) || targetArtist.includes(norm(it.artist)));
+      if (exactArtist) return exactArtist;
+    }
+    return matches[0];
+  } catch {
+    return null;
+  }
+}
+
+export async function searchAndDownloadBilibiliSong({ song, artist = '', bvid: explicitBvid = '', destPath, log = console.error }) {
   const cleanSong = String(song || '').replace(/[《》"'【】]/g, '').trim();
   const cleanArtist = String(artist || '').trim();
   if (!cleanSong) throw new Error('歌名不能为空');
@@ -242,6 +316,50 @@ export async function searchAndDownloadBilibiliSong({ song, artist = '', destPat
   const setCookies = home.headers.getSetCookie?.() || [home.headers.get('set-cookie') || ''];
   const cookie = setCookies.map((c) => c.split(';')[0]).filter(Boolean).join('; ');
   const H = { 'user-agent': BILI_UA, referer: 'https://www.bilibili.com/', cookie };
+
+  // 1.5 优先命中显式 --bvid 或预筛纯净金曲目录（curated-songs-catalog.json），失败则自动回退实时检索
+  const preferredBvid = String(explicitBvid || '').trim() || (lookupCuratedBvid(cleanSong, cleanArtist)?.bvid || '');
+  const tryDownloadBvid = async (cand) => {
+    const view = await jfetch(`https://api.bilibili.com/x/web-interface/view?bvid=${cand.bvid}`, { headers: H }, 2);
+    const vData = view.body?.data;
+    const cid = vData?.cid;
+    if (!cid) return null;
+    const play = await jfetch(
+      `https://api.bilibili.com/x/player/playurl?bvid=${cand.bvid}&cid=${cid}&fnval=16`,
+      { headers: H },
+      2
+    );
+    const audios = (play.body?.data?.dash?.audio || []).sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
+    if (!audios.length) return null;
+    const streamUrl = audios[0].baseUrl || audios[0].base_url || audios[0].backupUrl?.[0];
+    if (!streamUrl) return null;
+    try {
+      await downloadFile(streamUrl, destPath, H, 3);
+      const st = fs.statSync(destPath);
+      if (st.size > 50 * 1024) {
+        return {
+          bvid: cand.bvid,
+          title: cand.title || String(vData?.title || cleanSong).trim(),
+          author: cand.author || String(vData?.owner?.name || '').trim(),
+          dur: cand.dur || Number(vData?.duration) || 0,
+          play: cand.play || Number(vData?.stat?.view) || 0,
+          score: cand.score ?? 99,
+          bytes: st.size,
+          bandwidth: audios[0].bandwidth || 0,
+        };
+      }
+    } catch {}
+    return null;
+  };
+
+  if (/^BV[0-9A-Za-z]{10}$/.test(preferredBvid)) {
+    const direct = await tryDownloadBvid({ bvid: preferredBvid, title: '', author: '', dur: 0, play: 0, score: 100 });
+    if (direct) {
+      log(`[sing-engine] 命中精选直连原唱: ${direct.bvid} | ${direct.title} (UP: ${direct.author}, ${direct.dur}s, ${(direct.bytes / 1048576).toFixed(2)}MB)`);
+      return direct;
+    }
+    log(`[sing-engine] 精选 BVID(${preferredBvid}) 拉取失败，自动回退 B 站实时检索…`);
+  }
 
   // 2. 检索原唱（优先官方 MV / 无损，带干净兜底词防止多词过严漏掉歌曲）
   const queries = cleanArtist
@@ -517,22 +635,39 @@ async function runHumanizedVocalPipeline({
   const levels = mapLevels(level);
   const seedBase = Math.floor(Date.now() % 100000);
 
-  // 1. Demucs htdemucs_ft 零漏音分轨
+  // 1. Demucs htdemucs_ft 零漏音分轨（全链路无损 FLAC 传输，省 3~6 倍带宽且 100% 保留立体声相位；清唱模式跳过伴奏轨下载）
   log(`[sing-engine] Demucs htdemucs_ft 分离人声与伴奏…`);
-  const clipUrl = await uploadToReplicate(clipWav, 'audio/wav');
+  let uploadClip = clipWav;
+  let uploadMime = 'audio/wav';
+  const clipFlac = path.join(workDir, 'clip.flac');
+  try {
+    await ff(['-i', clipWav, '-c:a', 'flac', '-compression_level', '5', clipFlac], 60000);
+    if (fs.existsSync(clipFlac) && fs.statSync(clipFlac).size > 20 * 1024) {
+      uploadClip = clipFlac;
+      uploadMime = 'audio/flac';
+    }
+  } catch {}
+  const clipUrl = await uploadToReplicate(uploadClip, uploadMime);
   const stems = await runReplicateModel('cjwbw/demucs', {
     audio: clipUrl,
     model_name: 'htdemucs_ft',
     stem: 'vocals',
-    output_format: 'wav',
+    output_format: 'flac',
   }, 'Demucs(htdemucs_ft)');
 
   if (!stems?.vocals) throw new Error('Demucs 未产出人声轨');
+  const vocalFlac = path.join(workDir, 'vocals.flac');
+  const instFlac = path.join(workDir, 'other.flac');
+  const needInst = safeMode !== 'acappella' && Boolean(stems.other);
+  await Promise.all([
+    downloadFile(stems.vocals, vocalFlac),
+    needInst ? downloadFile(stems.other, instFlac) : Promise.resolve(),
+  ]);
   let vocalRaw = path.join(workDir, 'vocals.wav');
   let instRaw = path.join(workDir, 'other.wav');
   await Promise.all([
-    downloadFile(stems.vocals, vocalRaw),
-    stems.other ? downloadFile(stems.other, instRaw) : Promise.resolve(),
+    ff(['-i', vocalFlac, '-c:a', 'pcm_s16le', vocalRaw], 60000),
+    needInst ? ff(['-i', instFlac, '-c:a', 'pcm_s16le', instRaw], 60000) : Promise.resolve(),
   ]);
 
   // 1.5 两阶段锁句裁剪·阶段 B：在 Demucs 纯净人声轨上做 10ms 级完整乐句起止锁定（绝不半句开唱或漏唱下句两字！）
@@ -665,7 +800,7 @@ async function runHumanizedVocalPipeline({
   };
 }
 
-// ── 曲库 LRU 秒唱缓存（上限 15 首 ≈ 38MB，QQ 聊天与实时通话共享！） ───────────
+// ── 曲库 LRU 秒唱缓存（上限 60 首 ≈ 150MB，QQ 聊天与实时通话共享！） ───────────
 function songCacheId(song, mode = 'bedroom_bgm') {
   const norm = String(song || '').toLowerCase().replace(/[\s《》【】"'.,!?，。！？\-—_]/g, '');
   if (!norm) return '';
@@ -718,7 +853,7 @@ function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, dur
     }, null, 2));
 
     // LRU 淘汰超出上限的最旧曲目，严格兜底磁盘占用
-    const maxItems = Math.max(3, CONFIG.songCacheMax || 15);
+    const maxItems = Math.max(3, CONFIG.songCacheMax || 60);
     const entries = fs.readdirSync(CONFIG.songCacheDir)
       .filter((f) => f.endsWith('.wav'))
       .map((f) => {
@@ -733,10 +868,14 @@ function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, dur
   } catch {}
 }
 
+// ── 进行中同曲并发合并（防止同一首歌被重复点歌时跑多份 Demucs + RVC 互相挤兑） ─
+const INFLIGHT_COVERS = new Map();
+
 // ── 公开入口 1：点歌翻唱已有歌曲（支持歌名检索 / 曲库秒唱缓存 / 外部链接 / 本地音频） ─
 export async function coverSong({
   song = '',
   artist = '',
+  bvid = '',
   file = '',
   url = '',
   mode = 'bedroom_bgm',
@@ -755,9 +894,11 @@ export async function coverSong({
   fs.mkdirSync(outDir, { recursive: true });
   const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
   const resolvedTitle = String(song || '').replace(/[《》]/g, '').trim();
+  const canShareKey = Boolean(useCache && resolvedTitle && !file && !url && !bvid && start === null && !intro && !outro);
+  const inflightKey = canShareKey ? songCacheId(resolvedTitle, safeMode) : '';
 
   // 0. 命中曲库秒唱缓存（仅按歌名翻唱且未指定自定义起止/口白时直接 0 秒返回！）
-  if (useCache && resolvedTitle && !file && !url && start === null && !intro && !outro) {
+  if (canShareKey) {
     const hit = findCachedSong({ song: resolvedTitle, mode: safeMode });
     if (hit) {
       const outFile = path.join(outDir, `cover-cached-${Date.now()}.wav`);
@@ -774,66 +915,95 @@ export async function coverSong({
         cached: true,
       };
     }
+    // 0.5 并发去重：若完全相同的 (歌名, 模式) 正在渲染中，直接复用同一份 Promise 零重复开销！
+    if (inflightKey && INFLIGHT_COVERS.has(inflightKey)) {
+      log(`[sing-engine] 🔁 复用进行中的同曲渲染任务: 《${resolvedTitle}》(${safeMode})`);
+      const shared = await INFLIGHT_COVERS.get(inflightKey);
+      const dupOut = path.join(outDir, `cover-shared-${Date.now()}.wav`);
+      if (shared?.file && fs.existsSync(shared.file)) {
+        fs.copyFileSync(shared.file, dupOut);
+        return { ...shared, file: dupOut };
+      }
+      const hitAfter = findCachedSong({ song: resolvedTitle, mode: safeMode });
+      if (hitAfter) {
+        fs.copyFileSync(hitAfter.file, dupOut);
+        return { ...shared, file: dupOut };
+      }
+      return shared;
+    }
   }
 
-  const workDir = fs.mkdtempSync(path.join(CONFIG.workRoot, 'cover-'));
-  try {
-    let sourcePath = '';
-    let matchedInfo = null;
+  const runJob = async () => {
+    const workDir = fs.mkdtempSync(path.join(CONFIG.workRoot, 'cover-'));
+    try {
+      let sourcePath = '';
+      let matchedInfo = null;
 
-    if (file && fs.existsSync(file)) {
-      sourcePath = file;
-    } else if (url) {
-      sourcePath = path.join(workDir, 'source-url.bin');
-      await downloadFile(String(url), sourcePath);
-    } else if (resolvedTitle) {
-      sourcePath = path.join(workDir, 'source.m4a');
-      matchedInfo = await searchAndDownloadBilibiliSong({ song: resolvedTitle, artist, destPath: sourcePath, log });
-    } else {
-      throw new Error('请提供歌名(song)、音频文件(file)或音频链接(url)');
-    }
+      if (file && fs.existsSync(file)) {
+        sourcePath = file;
+      } else if (url) {
+        sourcePath = path.join(workDir, 'source-url.bin');
+        await downloadFile(String(url), sourcePath);
+      } else if (resolvedTitle) {
+        sourcePath = path.join(workDir, 'source.m4a');
+        matchedInfo = await searchAndDownloadBilibiliSong({ song: resolvedTitle, artist, bvid, destPath: sourcePath, log });
+      } else {
+        throw new Error('请提供歌名(song)、音频文件(file)或音频链接(url)');
+      }
 
-    // 阶段 A：宽裕粗切（约 62s），待 Demucs 分出纯净人声轨后再精准按完整乐句锁边裁剪
-    const win = await locateSongWindow(sourcePath, { start, seconds: Math.min(45, Number(seconds) || 42), coarse: true, log });
-    const clipWav = path.join(workDir, 'clip.wav');
-    await ff([
-      '-ss', String(win.start.toFixed(2)),
-      '-i', sourcePath,
-      '-t', String(win.duration.toFixed(2)),
-      '-ar', '44100', '-ac', '2',
-      clipWav,
-    ]);
+      // 阶段 A：宽裕粗切（约 62s），待 Demucs 分出纯净人声轨后再精准按完整乐句锁边裁剪
+      const win = await locateSongWindow(sourcePath, { start, seconds: Math.min(45, Number(seconds) || 42), coarse: true, log });
+      const clipWav = path.join(workDir, 'clip.wav');
+      await ff([
+        '-ss', String(win.start.toFixed(2)),
+        '-i', sourcePath,
+        '-t', String(win.duration.toFixed(2)),
+        '-ar', '44100', '-ac', '2',
+        clipWav,
+      ]);
 
-    const outFile = path.join(outDir, `cover-${Date.now()}.wav`);
-    const res = await runHumanizedVocalPipeline({
-      clipWav,
-      workDir,
-      outFile,
-      mode: safeMode,
-      level,
-      songTitle: resolvedTitle,
-      isOriginal: false,
-      framing,
-      exactPhraseTrim: Boolean(win.exactTrim),
-      targetSongSec: Math.min(43, Number(seconds) || 41),
-      introText: intro,
-      outroText: outro,
-      pitchOverride: pitchChange,
-      log,
-    });
-    if (resolvedTitle && useCache && framing) {
-      saveSongToCache({
-        song: resolvedTitle,
-        artist,
+      const outFile = path.join(outDir, `cover-${Date.now()}.wav`);
+      const res = await runHumanizedVocalPipeline({
+        clipWav,
+        workDir,
+        outFile,
         mode: safeMode,
-        wavFile: outFile,
-        durationSec: res.durationSec,
-        pitchChange: res.pitchChange,
+        level,
+        songTitle: resolvedTitle,
+        isOriginal: false,
+        framing,
+        exactPhraseTrim: Boolean(win.exactTrim),
+        targetSongSec: Math.min(43, Number(seconds) || 41),
+        introText: intro,
+        outroText: outro,
+        pitchOverride: pitchChange,
+        log,
       });
+      if (resolvedTitle && useCache && framing) {
+        saveSongToCache({
+          song: resolvedTitle,
+          artist,
+          mode: safeMode,
+          wavFile: outFile,
+          durationSec: res.durationSec,
+          pitchChange: res.pitchChange,
+        });
+      }
+      return { ...res, song: resolvedTitle, artist, matched: matchedInfo, cached: false };
+    } finally {
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
     }
-    return { ...res, song: resolvedTitle, artist, matched: matchedInfo, cached: false };
+  };
+
+  if (!inflightKey) return runJob();
+  const promise = runJob();
+  INFLIGHT_COVERS.set(inflightKey, promise);
+  try {
+    return await promise;
   } finally {
-    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
+    if (INFLIGHT_COVERS.get(inflightKey) === promise) {
+      INFLIGHT_COVERS.delete(inflightKey);
+    }
   }
 }
 
@@ -910,13 +1080,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const out = await coverSong({
         song: flags.song || '',
         artist: flags.artist || '',
+        bvid: flags.bvid || '',
         file: flags.file || '',
         url: flags.url || '',
         mode: flags.mode || 'bedroom_bgm',
         level: flags.level || 'natural',
         start: flags.start !== undefined ? Number(flags.start) : null,
         seconds: flags.seconds !== undefined ? Number(flags.seconds) : 45,
+        pitchChange: flags.pitch !== undefined ? Number(flags.pitch) : null,
         framing: flags.framing !== 'false',
+        useCache: flags.noCache !== 'true',
         outDir: flags.outDir || os.tmpdir(),
       });
       console.log(JSON.stringify(out, null, 2));

@@ -45,6 +45,8 @@ function loadConfig() {
     bridgeBase: `http://127.0.0.1:${Number(raw.consolePort || raw.console?.port || 3100)}`,
     callPort: Number(raw.call?.port || 3300),
     callBase: `http://127.0.0.1:${Number(raw.call?.port || 3300)}`,
+    gamePort: Number(raw.game?.port || 3350),
+    gameBase: `http://127.0.0.1:${Number(raw.game?.port || 3350)}`,
     onebotHttp: String(raw.snowluma?.httpUrl || `http://127.0.0.1:${Number(raw.snowluma?.httpPort || 3000)}`).replace(/\/+$/, ''),
     onebotToken: String(raw.snowluma?.accessToken || raw.snowluma?.token || '')
   };
@@ -52,6 +54,10 @@ function loadConfig() {
 
 function readConsoleToken() {
   try { return fs.readFileSync(CONSOLE_TOKEN_PATH, 'utf8').trim(); } catch { return ''; }
+}
+
+function readGameLinkToken() {
+  try { return fs.readFileSync(path.join(STATE_DIR, 'game-link-token'), 'utf8').trim(); } catch { return ''; }
 }
 
 function hashPassword(password, saltHex = crypto.randomBytes(16).toString('hex')) {
@@ -371,6 +377,7 @@ function renderPortalHtml() {
   <div class="tabs">
     <button class="tabBtn active" data-tab="wl">👥 白名单</button>
     <button class="tabBtn" data-tab="screen">🖥️ 看屏三通道</button>
+    <button class="tabBtn" data-tab="game">🎮 游戏伴侣</button>
     <button class="tabBtn" data-tab="status">⚙️ 状态与安全</button>
   </div>
 
@@ -486,7 +493,82 @@ function renderPortalHtml() {
     </div>
   </section>
 
-  <!-- TAB 3: 状态与安全 -->
+  <!-- TAB 3: 游戏伴侣（MC 1.21.1 自休眠私服 + Steam Neuro-API 直连） -->
+  <section id="tab-game" class="hidden">
+    <div class="grid2">
+      <div class="card">
+        <h2>
+          <span>⛏️ Minecraft 1.21.1 自休眠云私服</span>
+          <span id="mcStatePill" class="pill">检测中…</span>
+        </h2>
+        <div class="hint">平时休眠占 0 MB 内存；点一下「放行本机 IP 并唤醒」即可约 15 秒启动世界并召唤小鲸鲸（xiaojingjing），所有人离开 10 分钟后自动存档休眠。</div>
+        <div class="row" style="margin-bottom:10px">
+          <button id="btnMcWake" class="primary">🔓 放行当前 IP 并唤醒 MC</button>
+          <button id="btnMcStop" class="danger">🌙 存档并休眠关服</button>
+          <button id="btnMcBotSpawn" class="sm">🐳 重新召唤小鲸鲸</button>
+        </div>
+        <div class="cmdBox" style="margin-bottom:10px">
+          服务器地址：<code id="mcAddrText">-</code> <button id="btnCopyMcAddr" class="sm" style="margin-left:6px;padding:3px 8px">复制</button><br/>
+          游戏版本：<code>Minecraft Java 1.21.1</code> · 小鲸鲸 ID：<code>xiaojingjing</code><br/>
+          当前在线：<span id="mcPlayersText">无</span> · <span id="mcIdleText">待机</span>
+        </div>
+        <div class="row" style="margin-bottom:8px">
+          <input id="mcAddPlayerInput" type="text" placeholder="可选：添加允许进服的 MC 英文/拼音用户名（留空则放行已敲门 IP）" style="flex:1;min-width:180px" />
+          <button id="btnMcAddPlayer" class="sm primary">+ 用户名白名单</button>
+        </div>
+        <div id="mcPlayerChips" class="chips"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">已敲门放行的 IP（24h 有效，防公网扫描防熊孩子）：</div>
+        <div id="mcIpChips" class="chips"></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>🐳 小鲸鲸游戏实时状态 & 指挥台</span>
+          <span id="gameActivePill" class="pill">未连接游戏</span>
+        </h2>
+        <div class="hint">开着 QQ 语音电话时直接开口指挥她即可；没打电话也能在这里直接下指令或看她在世界里的实时血量与背包。</div>
+        <div id="gameTelemetryBox" class="cmdBox" style="margin-bottom:10px;line-height:1.7">等待游戏连接…</div>
+        <div class="row" style="margin-bottom:8px">
+          <button class="sm mcQuickBtn" data-cmd="跟我走">🏃 跟我走</button>
+          <button class="sm mcQuickBtn" data-cmd="贴身保护我">🛡️ 贴身保镖</button>
+          <button class="sm mcQuickBtn" data-cmd="去砍6根木头">🪓 砍木头</button>
+          <button class="sm mcQuickBtn" data-cmd="去挖点石头和煤">⛏️ 挖石头/煤</button>
+          <button class="sm mcQuickBtn" data-cmd="记一下这里作为咱们的家">🏠 设家</button>
+          <button class="sm mcQuickBtn" data-cmd="原地停下待命">✋ 停下</button>
+        </div>
+        <div class="askRow" style="margin-bottom:10px">
+          <input id="gameCmdInput" type="text" placeholder="给小鲸鲸下游戏指令：如「把铁矿扔给我」「做一把石镐」…" />
+          <button id="btnGameCmd" class="primary">发送指令</button>
+        </div>
+        <div class="switchRow">
+          <div><span>沙盒自主行动</span><small>MC 中没人下指令时自动陪伴、采集和自保</small></div>
+          <input id="chkGameAuto" type="checkbox" class="toggle" checked />
+        </div>
+        <div class="switchRow">
+          <div><span>QQ 语音实时吐槽联动</span><small>遇苦力怕/掉血/挖矿时在通话里原声提醒</small></div>
+          <input id="chkGameVoice" type="checkbox" class="toggle" checked />
+        </div>
+        <div id="gameActionLog" class="chatBox" style="max-height:190px;margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>🃏 路线 C · Steam 游戏直连（小丑牌 Balatro / 杀戮尖塔 / 恶魔轮盘 / Among Us）</span>
+        <button id="btnRotateGameTok" class="sm danger">重置连接密钥</button>
+      </h2>
+      <div class="hint">本底座原生兼容 <code>VedalAI/neuro-sdk</code> WebSocket 协议。在 Windows 电脑下载零依赖桥接脚本并运行下方一条命令，即可把本机 <code>ws://127.0.0.1:8000</code> 安全转发给云端小鲸鲸：</div>
+      <div class="cmdBox" style="word-break:break-all;margin-bottom:10px">
+        <code id="steamLinkCmd">加载中…</code>
+      </div>
+      <div class="row">
+        <button id="btnCopySteamCmd" class="sm primary">复制 Windows 启动命令</button>
+        <a href="/api/game/link-script" download="pet-game-link.mjs"><button type="button" class="sm">⬇️ 下载本机桥接器 (pet-game-link.mjs)</button></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 4: 状态与安全 -->
   <section id="tab-status" class="hidden">
     <div class="grid2">
       <div class="card">
@@ -576,13 +658,22 @@ function showApp() {
 }
 
 // Tab 切换
+let gamePollTimer = null;
 document.querySelectorAll('.tabBtn').forEach(btn => {
   btn.onclick = () => {
     const t = btn.dataset.tab;
     document.querySelectorAll('.tabBtn').forEach(b => b.classList.toggle('active', b === btn));
-    ['wl', 'screen', 'status'].forEach(id => $('tab-' + id).classList.toggle('hidden', id !== t));
+    ['wl', 'screen', 'game', 'status'].forEach(id => $('tab-' + id).classList.toggle('hidden', id !== t));
     if (t === 'status') loadOverview();
     if (t === 'wl') loadWhitelists();
+    if (t === 'game') {
+      loadGameStatus();
+      loadGameToken();
+      if (!gamePollTimer) gamePollTimer = setInterval(loadGameStatus, 4000);
+    } else if (gamePollTimer) {
+      clearInterval(gamePollTimer);
+      gamePollTimer = null;
+    }
   };
 });
 
@@ -1178,6 +1269,134 @@ document.querySelectorAll('.modeBtn').forEach(b => b.onclick = () => {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'set_mode', mode: b.dataset.mode }));
 });
 
+// ── 游戏伴侣（MC 1.21.1 自休眠私服 + Neuro-API Steam 直连） ──
+let lastGameToken = '';
+async function loadGameToken() {
+  try {
+    const d = await api('/api/game/token');
+    lastGameToken = d.token || '';
+    const origin = window.location.origin;
+    $('steamLinkCmd').textContent = 'node pet-game-link.mjs --portal ' + origin + ' --token ' + lastGameToken + ' --insecure';
+  } catch {}
+}
+
+async function loadGameStatus() {
+  try {
+    const d = await api('/api/game/status');
+    const mc = d.mc || {};
+    const hostOnly = window.location.hostname;
+    $('mcAddrText').textContent = hostOnly + ':' + (mc.publicPort || 25565);
+
+    const stMap = { sleeping: '🌙 休眠中 (0MB)', starting: '⏳ 唤醒中…', running: '🟢 运行中', stopping: '💾 保存关服中…' };
+    $('mcStatePill').textContent = stMap[mc.state] || (mc.state || '未知');
+    $('mcStatePill').className = 'pill ' + (mc.state === 'running' ? 'ok' : (mc.state === 'starting' ? 'warn' : ''));
+    $('mcPlayersText').textContent = (mc.onlinePlayers && mc.onlinePlayers.length) ? mc.onlinePlayers.join('、') : '暂无在线';
+    $('mcIdleText').textContent = mc.state === 'running'
+      ? (mc.humanPlayers?.length ? ('游玩中 · 已运行 ' + Math.round((mc.uptimeSec || 0) / 60) + 'min') : ('无人计时 ' + Math.round((mc.idleSec || 0) / 60) + '/' + (mc.idleSleepMin || 10) + 'min 后自动休眠'))
+      : '等待唤醒';
+
+    // 渲染 MC 用户名白名单与敲门 IP
+    const players = mc.access?.allowedPlayers || [];
+    $('mcPlayerChips').innerHTML = players.length
+      ? players.map(p => '<span class="chip">' + esc(p) + ' <button class="x" onclick="removeMcPlayer(\'' + esc(p) + '\')">×</button></span>').join('')
+      : '<span style="font-size:12px;color:var(--muted)">未限定用户名（任何已敲门 IP 的玩家均可进入）</span>';
+    const ips = mc.access?.allowedIps || [];
+    $('mcIpChips').innerHTML = ips.length
+      ? ips.map(x => {
+          const leftH = x.expiresAt ? Math.max(1, Math.round((x.expiresAt - Date.now()) / 3600000)) + 'h' : '永久';
+          return '<span class="chip">' + esc(x.ip) + ' (' + leftH + ') <button class="x" onclick="removeMcIp(\'' + esc(x.ip) + '\')">×</button></span>';
+        }).join('')
+      : '<span style="font-size:12px;color:var(--muted)">暂无放行 IP（点上方绿色按钮立即放行你当前电脑 IP）</span>';
+
+    // 游戏大脑状态
+    $('chkGameAuto').checked = d.settings?.autonomous !== false;
+    $('chkGameVoice').checked = d.settings?.voiceCommentary !== false;
+    const active = (d.sessions || [])[0] || null;
+    if (active) {
+      $('gameActivePill').textContent = '🟢 ' + active.game + ' (' + active.actionCount + '技能)';
+      $('gameActivePill').className = 'pill ok';
+      const t = active.telemetry || {};
+      const lines = [];
+      if (Number.isFinite(t.hp)) lines.push('❤️ 血量 ' + t.hp + '/' + (t.maxHp || 20) + ' · 🍗 饥饿 ' + (t.food ?? '-') + '/20 · 🕒 ' + (t.timeOfDay || '-'));
+      if (t.pos) lines.push('📍 坐标 (' + t.pos.x + ', ' + t.pos.y + ', ' + t.pos.z + ') · 🎯 当前：' + (t.activeTask || '待命'));
+      if (Array.isArray(t.nearbyPlayers) && t.nearbyPlayers.length) {
+        lines.push('👥 附近玩家：' + t.nearbyPlayers.map(p => p.name + (p.dist !== null ? '(' + p.dist + '格)' : '')).join('、'));
+      }
+      if (Array.isArray(t.nearbyMobs) && t.nearbyMobs.length) {
+        lines.push('👾 附近怪物：' + t.nearbyMobs.map(m => m.name + '(' + m.dist + '格)').join('、'));
+      }
+      if (Array.isArray(t.inventory) && t.inventory.length) {
+        lines.push('🎒 背包：' + t.inventory.slice(0, 10).map(i => i.name + '×' + i.count).join('、'));
+      }
+      $('gameTelemetryBox').textContent = lines.length ? lines.join('\n') : ('已连接《' + active.game + '》，等待游戏状态同步…');
+      const acts = (active.recentActions || []).slice().reverse();
+      $('gameActionLog').innerHTML = acts.length
+        ? acts.map(a => '<div class="msg ' + (a.success ? 'ai' : 'sys') + '">' + esc(a.name) + '(' + esc(a.args ? JSON.stringify(a.args) : '') + ') → ' + esc(a.message || (a.success ? '完成' : '失败')) + (a.say ? ' | 「' + esc(a.say) + '」' : '') + '</div>').join('')
+        : '<div class="empty">暂无游戏行动记录</div>';
+    } else {
+      $('gameActivePill').textContent = '待机（未连游戏）';
+      $('gameActivePill').className = 'pill';
+      $('gameTelemetryBox').textContent = '目前没有游戏接入；点左侧唤醒 MC，或在 Windows 运行下方 Steam 桥接命令接入小丑牌等 Neuro-API 游戏。';
+      $('gameActionLog').innerHTML = '<div class="empty">等待游戏接入…</div>';
+    }
+  } catch (err) {
+    $('mcStatePill').textContent = '离线';
+  }
+}
+
+window.removeMcPlayer = async (name) => {
+  try { await api('/api/mc/access', { method: 'POST', body: JSON.stringify({ removePlayer: name }) }); loadGameStatus(); } catch (e) { toast(e.message, 'err'); }
+};
+window.removeMcIp = async (ip) => {
+  try { await api('/api/mc/access', { method: 'POST', body: JSON.stringify({ removeIp: ip }) }); loadGameStatus(); } catch (e) { toast(e.message, 'err'); }
+};
+$('btnMcWake').onclick = async () => {
+  $('btnMcWake').disabled = true;
+  try {
+    const r = await api('/api/mc/wake', { method: 'POST', body: JSON.stringify({ hours: 24 }) });
+    toast(r.alreadyRunning ? '已放行当前 IP，MC 正在运行中！' : '已放行当前 IP，正在唤醒 MC 世界（约 15 秒）…');
+    loadGameStatus();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { $('btnMcWake').disabled = false; }
+};
+$('btnMcStop').onclick = async () => {
+  if (!confirm('确定保存世界并让 MC 服务器休眠关服吗？')) return;
+  try { await api('/api/mc/stop', { method: 'POST', body: '{}' }); toast('正在存档关服…'); loadGameStatus(); } catch (e) { toast(e.message, 'err'); }
+};
+$('btnMcBotSpawn').onclick = async () => {
+  try { await api('/api/mc/bot', { method: 'POST', body: JSON.stringify({ action: 'spawn' }) }); toast('已发出召唤指令'); loadGameStatus(); } catch (e) { toast(e.message, 'err'); }
+};
+$('btnMcAddPlayer').onclick = async () => {
+  const p = $('mcAddPlayerInput').value.trim();
+  if (!p) return;
+  try {
+    await api('/api/mc/access', { method: 'POST', body: JSON.stringify({ addPlayer: p }) });
+    $('mcAddPlayerInput').value = '';
+    toast('已加入 MC 白名单：' + p);
+    loadGameStatus();
+  } catch (e) { toast(e.message, 'err'); }
+};
+async function sendGameCommand(text) {
+  const q = String(text || '').trim();
+  if (!q) return;
+  try {
+    const r = await api('/api/game/command', { method: 'POST', body: JSON.stringify({ from: '主人', text: q, via: 'portal' }) });
+    toast(r.reply || '指令已发送');
+    loadGameStatus();
+  } catch (e) { toast(e.message, 'err'); }
+}
+$('btnGameCmd').onclick = () => { const q = $('gameCmdInput').value.trim(); $('gameCmdInput').value = ''; sendGameCommand(q); };
+$('gameCmdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnGameCmd').click(); });
+document.querySelectorAll('.mcQuickBtn').forEach(b => b.onclick = () => sendGameCommand(b.dataset.cmd));
+$('chkGameAuto').onchange = () => api('/api/game/config', { method: 'POST', body: JSON.stringify({ autonomous: $('chkGameAuto').checked }) }).then(() => toast('已更新自主行动开关')).catch(e => toast(e.message, 'err'));
+$('chkGameVoice').onchange = () => api('/api/game/config', { method: 'POST', body: JSON.stringify({ voiceCommentary: $('chkGameVoice').checked }) }).then(() => toast('已更新语音联动开关')).catch(e => toast(e.message, 'err'));
+$('btnCopyMcAddr').onclick = () => navigator.clipboard?.writeText($('mcAddrText').textContent).then(() => toast('已复制服务器地址'));
+$('btnCopySteamCmd').onclick = () => navigator.clipboard?.writeText($('steamLinkCmd').textContent).then(() => toast('已复制 Windows 启动命令'));
+$('btnRotateGameTok').onclick = async () => {
+  if (!confirm('重置后旧的 Steam 桥接密钥将立即失效，确定重置吗？')) return;
+  try { await api('/api/game/token/rotate', { method: 'POST', body: '{}' }); toast('密钥已重置'); loadGameToken(); } catch (e) { toast(e.message, 'err'); }
+};
+
 // 启动自动检测会话
 api('/auth/me').then(() => showApp()).catch(() => showLogin());
 </script>
@@ -1435,36 +1654,95 @@ const server = https.createServer({ key: tlsInfo.key, cert: tlsInfo.cert }, asyn
       return sendJson(res, r.json || { ok: false }, r.status);
     }
 
+    // 6. 游戏伴侣 & MC 自休眠私服代理接口（严格鉴权，绝不暴露底层 Token）
+    if (req.method === 'GET' && pathname === '/api/game/link-script') {
+      const scriptPath = path.join(path.dirname(new URL(import.meta.url).pathname), 'pet-game-link.mjs');
+      if (!fs.existsSync(scriptPath)) return sendJson(res, { ok: false, error: '未找到 pet-game-link.mjs' }, 404);
+      setSecurityHeaders(res, false);
+      res.writeHead(200, {
+        'content-type': 'application/javascript; charset=utf-8',
+        'content-disposition': 'attachment; filename="pet-game-link.mjs"'
+      });
+      res.end(fs.readFileSync(scriptPath));
+      return;
+    }
+    if (req.method === 'GET' && (pathname === '/api/game/status' || pathname === '/api/game/token' || pathname === '/api/mc/status')) {
+      const r = await fetchJsonSafe(`${cur.gameBase}${pathname}`, { headers: internalHeaders });
+      return sendJson(res, r.json || { ok: false, error: 'game-hub 未运行' }, r.status || 502);
+    }
+    if (req.method === 'POST' && (
+      pathname === '/api/game/token/rotate' ||
+      pathname === '/api/game/config' ||
+      pathname === '/api/game/command' ||
+      pathname === '/api/game/action' ||
+      pathname === '/api/mc/wake' ||
+      pathname === '/api/mc/stop' ||
+      pathname === '/api/mc/access' ||
+      pathname === '/api/mc/bot'
+    )) {
+      if (!checkSameOrigin(req)) return sendJson(res, { ok: false, error: '非法来源' }, 403);
+      const body = await readJsonBody(req);
+      // 唤醒 MC 时自动把当前已登录管理员的来源 IP 加入 24h 敲门放行名单
+      if (pathname === '/api/mc/wake' && !body.knockIp) {
+        body.knockIp = getClientIp(req);
+        body.note = `portal:${session.username}`;
+      }
+      const r = await fetchJsonSafe(`${cur.gameBase}${pathname}`, {
+        method: 'POST',
+        headers: internalHeaders,
+        body: JSON.stringify(body),
+        timeoutMs: 25000
+      });
+      return sendJson(res, r.json || { ok: false, error: 'game-hub 未响应' }, r.status || 502);
+    }
+
     sendJson(res, { ok: false, error: 'not found' }, 404);
   } catch (err) {
     sendJson(res, { ok: false, error: String(err?.message ?? err) }, 500);
   }
 });
 
-// ── 受鉴权 WebSocket 透传（支持 JSON 文本帧 + 二进制 16kHz PCM 屏幕音轨帧） ──
+// ── 受鉴权 WebSocket 透传（/ws/screen 物理三通道 + /ws/neuro Steam/游戏伴侣直连） ──
 const wss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
 
 server.on('upgrade', (req, socket, head) => {
   const urlObj = new URL(req.url || '/', 'https://localhost');
-  if (urlObj.pathname !== '/ws/screen') {
-    socket.destroy();
+  if (urlObj.pathname === '/ws/screen') {
+    const session = getValidSession(req);
+    if (!session || !checkSameOrigin(req)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (clientWs) => {
+      wss.emit('connection', clientWs, req, 'screen');
+    });
     return;
   }
-  const session = getValidSession(req);
-  if (!session || !checkSameOrigin(req)) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
+  if (urlObj.pathname === '/ws/neuro' || urlObj.pathname === '/ws/game') {
+    const providedTok = String(urlObj.searchParams.get('token') || req.headers['x-game-token'] || '').trim();
+    const expectedTok = readGameLinkToken();
+    const session = getValidSession(req);
+    const tokenOk = Boolean(expectedTok && providedTok && providedTok.length === expectedTok.length && crypto.timingSafeEqual(Buffer.from(providedTok), Buffer.from(expectedTok)));
+    if (!tokenOk && !session) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (clientWs) => {
+      wss.emit('connection', clientWs, req, 'neuro');
+    });
     return;
   }
-  wss.handleUpgrade(req, socket, head, (clientWs) => {
-    wss.emit('connection', clientWs, req);
-  });
+  socket.destroy();
 });
 
-wss.on('connection', (clientWs) => {
+wss.on('connection', (clientWs, req, channel = 'screen') => {
   const cur = loadConfig();
   const tok = readConsoleToken();
-  const upstreamUrl = `ws://127.0.0.1:${cur.callPort}/ws/screen?token=${encodeURIComponent(tok)}`;
+  const upstreamUrl = channel === 'neuro'
+    ? `ws://127.0.0.1:${cur.gamePort}/ws/neuro?token=${encodeURIComponent(tok)}`
+    : `ws://127.0.0.1:${cur.callPort}/ws/screen?token=${encodeURIComponent(tok)}`;
   const upstreamWs = new WebSocket(upstreamUrl, { maxPayload: 3 * 1024 * 1024 });
   const pendingToUp = [];
 

@@ -10,6 +10,7 @@
 > - **统一远程 HTTPS 管理台与看屏网关**：[pet-portal-module.md](./pet-portal-module.md)（免 SSH 手机/电脑直连，白名单搜好友昵称热更新 + 物理三通道整合 + 主人 QQ 私聊 `/白名单` 快捷口令）
 > - **「活人感」点歌翻唱与原创哼唱引擎**：[singing-module.md](./singing-module.md)（B 站原唱精准避坑检索 + 两阶段纯净人声 10ms 锁句防吃字/防漏下句 + 立体声 Mid/Side 居中主唱提纯与多人合唱识别 + 精确八度定调 + Pre-RVC 5 层真人微瑕 + 零嗡鸣交替反射与伴奏人声挖槽侧链避让 + LRU 秒唱曲库 + 15s 心跳保活防超时）
 > - **「自己的生活」与全景日记模块指南**：[life-diary-module.md](./life-diary-module.md)（每日闲逛输入 + 8 路全景记忆聚合 + 成长里程碑/回忆杀 + 重吐槽碎碎念风格锚点 + 动态手绘手账配图 + 睡眠海马体整理）
+> - **独立可解耦「游戏伴侣与联机」模块指南**：[game-companion-module.md](./game-companion-module.md)（原生兼容 `VedalAI/neuro-sdk` 标准协议 + 闲时 0 MB 内存自休眠 Minecraft 1.21.1 云私服 & IP 敲门墙 + Mineflayer 具身语音联机队友 + Windows 零依赖 Steam Mod 桥接器）
 
 ---
 
@@ -27,6 +28,7 @@
 | **独立「自己的生活」与全景手账日记** | 说说只有一句话、冷冰冰流水账、记忆重复与过期乌龙、散文腔/鸡汤味、缺手绘插画与节气回忆 | **[`life-diary-module.md`](./life-diary-module.md)** + [`templates/qq-life.mjs`](./templates/qq-life.mjs) + [`templates/memory-consolidator.mjs`](./templates/memory-consolidator.mjs) + [`templates/weather-solar.mjs`](./templates/weather-solar.mjs) + [`templates/diary-examples.json`](./templates/diary-examples.json)：每日 2 次多渠道闲逛（B站/豆瓣/社区热议/播客/节气天气 + 限频宝藏安利）+ 8 路全景记忆与回忆杀纪念日引擎 + 重吐槽碎碎念风格锚点 + **动态手绘手账配图**（按氛围自动切涂鸦/水彩手账风 1–2 张）+ **夜间睡眠海马体记忆整理**（去重/日期锚定/过期归档，0 常驻内存） |
 | **统一远程 HTTPS 管理台与看屏网关** | 外出没电脑无法给朋友加白名单、每次看屏需手动开 SSH 端口转发、暴露内网口不安全 | **[`pet-portal-module.md`](./pet-portal-module.md)** + [`templates/pet-portal.mjs`](./templates/pet-portal.mjs)：独立 TLS 1.3 HTTPS 网关（scrypt 密码哈希 + 防爆破锁定 + HttpOnly Cookie + 最小权限代理，内部 Token 绝不下发），手机一键搜 QQ 好友昵称热加私聊/群聊/语音白名单，电脑同页直开 1080p 物理三通道看屏，另附管理员 QQ 私聊 `/全白名单 加 QQ号` 快捷口令 |
 | **「活人感」点歌翻唱与原创哼唱引擎** | 传统 RVC 翻唱修音太死、半句/半段硬切、固定口白复读、只唱二三十秒太短、男声歌音调偏低不像本人、嗡鸣盖人声 | **[`singing-module.md`](./singing-module.md)** + [`curated-songs-catalog.json`](./curated-songs-catalog.json) + [`templates/vocal-humanizer.py`](./templates/vocal-humanizer.py) + [`templates/humanized-sing-engine.mjs`](./templates/humanized-sing-engine.mjs)：118 首精选直连目录 + B 站原唱避坑检索 + **纯人声 Paraformer + LLM 音乐段落锁边**（完整四句联/主副歌，绝不停在四句第 3 句）+ **四档篇幅与无缝续唱**（默认半首 / 浅唱 / 整首 / “继续唱”跳过间奏续唱 + QQ 乐段无痕分条）+ **默认零套话直入开唱** + **贴合 ~268Hz 说话声线的连续半音升调 + `rubberband` 伴奏同步移调** + Mid/Side 主唱提纯 + 无损 FLAC/`curl` 代理加速 + 同曲并发合并 + 零嗡鸣房间声学与侧链避让 + LRU 60 首曲库 |
+| **独立「游戏伴侣与联机」模块** | AI 只能文字陪聊无法真正进游戏联机、4G 服务器常驻 MC 内存爆掉、公网离线私服易被扫爆、Steam Mod 难跨公网鉴权 | **[`game-companion-module.md`](./game-companion-module.md)** + [`templates/game-hub.mjs`](./templates/game-hub.mjs) + [`templates/mc-server-manager.mjs`](./templates/mc-server-manager.mjs) + [`templates/mc-companion.mjs`](./templates/mc-companion.mjs) + [`templates/pet-game-link.mjs`](./templates/pet-game-link.mjs)：**原生兼容 `VedalAI/neuro-sdk` v1 协议底座** + **闲时 0 MB 内存自休眠 PaperMC 1.21.1 私服**（Portal 一键 IP 敲门防扫描、systemd cgroup `MemoryMax=1350M` 隔离、10 分钟无人自动存档关服）+ **Mineflayer 具身联机队友**（快环生存反射 + 17 白名单技能零 `eval` + QQ 实时语音双向指挥与高光播报）+ **跨平台零依赖 Steam Mod 桥接器**（直通小丑牌 Balatro / 杀戮尖塔 / 恶魔轮盘 / Among Us） |
 | **私有资产库自动云端备份** | 梗库、梗图、记忆、日记、绘画长期积累不占本机空间、防服务器丢失 | [`templates/sync-vault.mjs`](./templates/sync-vault.mjs)：服务器经单仓库 Deploy Key 自动增量推送到私有 GitHub Vault，并自动生成 `MEMES.md` / `DRAWINGS.md` / `DIARY.md` 与 `memory/milestones.json` |
 
 ---
@@ -44,7 +46,12 @@
 ├── singing-module.md             # 「活人感」点歌翻唱与原创哼唱引擎（两阶段锁句 + Mid/Side 提纯 + 无损 FLAC/代理 + 通话防幻觉状态机）
 ├── curated-songs-catalog.json    # 预筛 118 首纯净原唱金曲 BVID 直连目录（零误搜，未命中自动回退避坑检索）
 ├── life-diary-module.md          # 「自己的生活」：闲逛输入 + 8 路全景记忆 + 手绘手账日记 + 睡眠记忆整理
+├── game-companion-module.md      # 独立可解耦「游戏伴侣与联机」模块（Neuro-API 底座 + 自休眠 MC 1.21.1 私服 + Steam 桥接）
 └── templates/
+    ├── game-hub.mjs              # 平台无关统一游戏伴侣内核 & 标准 Neuro-API v1 网关（语音指挥 / 高光播报 / 记忆写回）
+    ├── mc-server-manager.mjs     # 闲时 0 MB 内存 MC 1.21.1 自休眠托管器 & Portal IP 敲门唤醒代理（cgroup 隔离）
+    ├── mc-companion.mjs          # Mineflayer 1.21.1 具身联机队友（快环生存反射 + 17 白名单安全技能，零 eval）
+    ├── pet-game-link.mjs         # 跨平台零依赖本机 Steam Neuro-SDK 桥接器（ws://127.0.0.1:8000 <-> wss://.../ws/neuro）
     ├── vocal-humanizer.py        # Praat TD-PSOLA 真人微瑕 / F0 测算 / 防叠加柔换气 / 手机近麦·房间外放·KTV 声学引擎
     ├── humanized-sing-engine.mjs # 端到端活人唱歌引擎（B 站原唱检索 / Paraformer 打点 / htdemucs_ft / RVC 自动续期 / 零残留清理）
     ├── pet-portal.mjs            # 统一远程 HTTPS 安全网关（scrypt 鉴权 / 防爆破 / 白名单可视化 / 同源 WSS 三通道代理）

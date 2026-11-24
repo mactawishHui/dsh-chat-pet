@@ -75,8 +75,8 @@ function calcRms(buf) {
 function cleanSpokenText(raw) {
   let s = String(raw || '');
   s = s.replace(/\[(?:HANGUP|SILENT)\]/gi, '');
-  // 剥离大脑自发隐形工具标签（[LOOKUP:...] / [SEARCH:...] / [SING:...]），绝不念出来
-  s = s.replace(/\[(?:LOOKUP|SEARCH|SING)\s*:[^\]]*\]/gi, '');
+  // 剥离大脑自发隐形工具标签（[LOOKUP:...] / [SEARCH:...] / [SING:...] / [GAME:...]），绝不念出来
+  s = s.replace(/\[(?:LOOKUP|SEARCH|SING|GAME)\s*:[^\]]*\]/gi, '');
   // 剥离模型偶发幻觉吐出的裸 XML/JSON 工具调用标签，避免 TTS 把代码念出来
   s = s.replace(/<(?:tool_?call|search|function|invoke|call|thought|think)[\s\S]*$/i, '');
   s = s.replace(/\{[\s\S]*"(?:keyword|query|url|command)"[\s\S]*\}\s*$/i, '');
@@ -245,6 +245,13 @@ export function parseBrainSidecarTag(rawReply, recentContext = '') {
     const q = mSearch[1].trim().slice(0, 48);
     if (q.length >= 2) {
       return { kind: 'web_search', query: q, label: `查「${q.slice(0, 14)}」`, fromBrain: true };
+    }
+  }
+  const mGame = s.match(/\[GAME\s*:\s*([^\]]+)\]/i);
+  if (mGame) {
+    const q = mGame[1].trim().slice(0, 80);
+    if (q.length >= 2) {
+      return { kind: 'game', query: q, label: `游戏行动「${q.slice(0, 14)}」`, fromBrain: true };
     }
   }
   return null;
@@ -622,9 +629,14 @@ export class RealtimeCallEngine {
     this.getContext = opts.getContext || (async () => ({}));
     this.onSummary = opts.onSummary || (async () => {});
     this.onSidecarTask = typeof opts.onSidecarTask === 'function' ? opts.onSidecarTask : null;
+    this.getGameStatus = typeof opts.getGameStatus === 'function' ? opts.getGameStatus : null;
     this.defaultCity = String(opts.defaultCity || '').trim();
     this.screenEngine = opts.screenEngine || null;
     this.log = opts.log || console.log;
+
+    // 活跃游戏联机态势（Minecraft / Steam Neuro-API 游戏共用）
+    this._activeGameStatus = null; // { game, telemetry, updatedAt }
+    this._lastGameProactiveSpeakAt = 0;
 
     // 异步旁路工具状态（绝不阻塞主通话延迟；唱歌独立序号与实时状态机，防重复点歌与“唱完啦”幻觉）
     this.songCacheDir = opts.songCacheDir || '/opt/qq-bridge/audio/song-cache';
@@ -900,7 +912,8 @@ export class RealtimeCallEngine {
   1) 对方明确让你现在唱一首歌（不是泛泛问“你会唱歌吗”）时：绝对不要问对方要音频或说“没伴奏唱不了”！末尾附 [SING:模式|歌名|歌手|篇幅]（模式填 acappella 清唱 / bedroom_bgm 带伴奏 / ktv 包厢；没提歌手留空；篇幅默认填 half 唱完整半首，对方说“浅唱/唱几句”填 snippet，对方说“唱整首/完整版”填 full；对方说“继续唱/接着往后唱”直接附 [SING:continue]；现编原创歌名填 原创）。音频本身无固定废话口白，直接开口就唱。
   2) 如果对方点的是上面**已在秒唱曲库里且模式与篇幅一致**的歌：直接自然简短答应一声（如“好，这首我熟”），说完 0 秒直接开唱。
   3) 如果对方点的是**不在曲库里的新歌、整首或续唱**：**必须先如实告知需要等一两分钟**（例如“这首我现找下伴奏准备一下，大概得等两三分钟呢，咱们先聊点别的，弄好了我直接唱给你听；要是等不及挂了电话我录完发你 QQ 语音”），绝不要说“这就来了你听听看”让对方干等！
-  4) **严禁幻觉说“唱完啦”**：只要系统提示歌曲“仍在后台准备中”，说明一秒都还没开唱，绝对不要说“唱完啦/咋样/刚刚唱的”，也不要重复输出 [SING:...]！只有真正唱进听筒并收到“已完整唱完”提示后才能聊唱后感。`
+  4) **严禁幻觉说“唱完啦”**：只要系统提示歌曲“仍在后台准备中”，说明一秒都还没开唱，绝对不要说“唱完啦/咋样/刚刚唱的”，也不要重复输出 [SING:...]！只有真正唱进听筒并收到“已完整唱完”提示后才能聊唱后感。
+- 【一起打游戏联动（Minecraft / 小丑牌等）】：如果系统提示你正连着游戏，且对方让你在游戏里做具体动作（如“跟我走/砍点木头/挖矿/把铁矿给我/过来救我/保护我/回家/开一下MC服/出这手牌”），正常自然答应一句，并在回复最末尾悄悄附 [GAME:简洁具体动作指令]（例如 [GAME:砍6根木头] 或 [GAME:保护主人]），系统会立刻操控你的游戏角色执行！`
     ];
     if (ctx?.impression) {
       parts.push(`【你对「${this.callerName}」的长期印象（历史累积，注意核对日期）】\n${ctx.impression}`);
@@ -1222,6 +1235,10 @@ export class RealtimeCallEngine {
     if (activeSingNote) {
       notes.push(activeSingNote);
     }
+    const activeGameNote = await this._buildActiveGameNote();
+    if (activeGameNote) {
+      notes.push(activeGameNote);
+    }
     const recentUserContext = this.transcript
       .filter((x) => x.role === 'user')
       .slice(-3)
@@ -1330,6 +1347,70 @@ export class RealtimeCallEngine {
     promptLines.push('请先看清画面细节、字幕与刚才的屏幕台词：真有值得吐槽/夸一句/接茬的点就自然冒一句短话（≤22字）；如果画面平淡没啥好说的，严格只输出 [SILENT] 绝不硬凑话！');
     const spoken = await this._runAiTurn(promptLines.join('\n'), { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', imageParts, silentIfToken: true, isWatchAlong: true });
     return Boolean(spoken);
+  }
+
+  async _buildActiveGameNote() {
+    let st = this._activeGameStatus;
+    if ((!st || Date.now() - st.updatedAt > 15000) && this.getGameStatus) {
+      try {
+        const fresh = await Promise.race([
+          this.getGameStatus(),
+          new Promise((r) => setTimeout(() => r(null), 220)),
+        ]);
+        if (fresh?.activeGame) {
+          const s0 = Array.isArray(fresh.sessions) ? fresh.sessions[0] : null;
+          st = { game: fresh.activeGame, telemetry: s0?.telemetry || {}, updatedAt: Date.now() };
+          this._activeGameStatus = st;
+        } else if (fresh && !fresh.activeGame) {
+          this._activeGameStatus = null;
+          st = null;
+        }
+      } catch {}
+    }
+    if (!st || !st.game || Date.now() - st.updatedAt > 120000) return '';
+    const t = st.telemetry || {};
+    const bits = [];
+    if (Number.isFinite(t.hp)) bits.push(`血量${t.hp}/${t.maxHp || 20}`);
+    if (Number.isFinite(t.food)) bits.push(`饥饿${t.food}/20`);
+    if (t.timeOfDay) bits.push(t.timeOfDay);
+    if (t.activeTask) bits.push(`正在:${t.activeTask}`);
+    if (Array.isArray(t.nearbyMobs) && t.nearbyMobs.length) {
+      bits.push(`附近怪:${t.nearbyMobs.slice(0, 3).map((m) => `${m.name}(${m.dist}格)`).join('/')}`);
+    }
+    return `[当前正在联机游玩《${st.game}》${bits.length ? `（${bits.join(' | ')}）` : ''}：如果对方刚才让你在游戏里执行操作，回复末尾附 [GAME:简洁指令] 立刻操控角色！]`;
+  }
+
+  async handleGameEvent({ game = '', level = 'fun', text = '', telemetry = null } = {}) {
+    if (!this.active || this._ending) return false;
+    if (game) {
+      this._activeGameStatus = { game, telemetry: telemetry || this._activeGameStatus?.telemetry || {}, updatedAt: Date.now() };
+    }
+    const clean = String(text || '').trim();
+    if (!clean) return false;
+
+    const note = `[游戏实时事件（《${game || '游戏'}》/${level}）：${clean}]`;
+    const now = Date.now();
+    const minGapMs = level === 'urgent' ? 6000 : 18000;
+    const canSpeakNow =
+      !this._inSpeech &&
+      !this._aiThinking &&
+      !this._playingSongLabel &&
+      this._playQueueBytes <= PCM24K_BYTES_PER_MS * 180 &&
+      (now - this._lastGameProactiveSpeakAt >= minGapMs);
+
+    if (!canSpeakNow) {
+      this._pendingSidecarNotes.push(note);
+      if (this._pendingSidecarNotes.length > 6) this._pendingSidecarNotes.shift();
+      return false;
+    }
+
+    this._lastGameProactiveSpeakAt = now;
+    this.log(`[call-game] 🎮 主动语音播报游戏事件 (${game}/${level}): ${clean.slice(0, 60)}`);
+    await this._runAiTurn(
+      `${note}\n[提示：游戏里刚发生这件事，请立刻用小鲸鲸本人松弛自然的一句短话（<=22字）反应或提醒对方，绝不播音腔，绝不念出括号标签]`,
+      { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', isWatchAlong: true }
+    );
+    return true;
   }
 
   _buildActiveSingNote() {

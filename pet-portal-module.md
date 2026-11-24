@@ -48,6 +48,11 @@ flowchart LR
 | `/通话白名单 加 <QQ号>` / `/通话白名单 删 <QQ号>` | 仅增删语音通话白名单 |
 | `/群白名单 加 <群号>` / `/群白名单 删 <群号>` | 增删群聊白名单 |
 | `/白名单` | 查看当前私聊 / 群聊 / 语音全部白名单 |
+| `/mc 开服` / `/mc 关服` / `/mc 状态` | 唤醒或保存休眠云端 Minecraft 1.21.1 私服与队友（含 `/mc 放行 <IP>`、`/mc 白名单 <玩家名>`） |
+
+### 2.4 一体化「🎮 游戏伴侣」面板与 `/ws/neuro` 加密代理
+- 集成 Minecraft 1.21.1 自休眠云私服控制：一键「放行当前登录 IP 并唤醒 MC + 召唤队友」、手动保存休眠关服、查看血量/坐标/背包/实时动作流与文本快捷指挥；
+- 内置独立可旋转的 `Game Link Token`（`state/game-link-token`）与 `/ws/neuro` WSS 透传通道，以及 `pet-game-link.mjs` 一键下载，用于 Windows Steam Neuro-SDK 开源 Mod（小丑牌 / 杀戮尖塔 / 恶魔轮盘 / Among Us）零改动安全直连。详见 [`game-companion-module.md`](./game-companion-module.md)。
 
 ---
 

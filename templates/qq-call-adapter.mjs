@@ -418,6 +418,24 @@ class NativeQQCallDaemon {
             return;
           }
         }
+        if (req.method === 'POST' && urlObj.pathname === '/api/call/game-event') {
+          const expected = readConsoleToken();
+          const provided = String(urlObj.searchParams.get('token') || req.headers['x-console-token'] || '').trim();
+          if (expected && provided !== expected) {
+            res.writeHead(401, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+            return;
+          }
+          const chunks = [];
+          for await (const c of req) chunks.push(c);
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+          const spoken = this.state === 'in_call' && this.engine
+            ? await this.engine.handleGameEvent(body).catch(() => false)
+            : false;
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: true, inCall: this.state === 'in_call', spoken: Boolean(spoken) }));
+          return;
+        }
         if (handleScreenHttp && await handleScreenHttp(req, res)) return;
         res.writeHead(404);
         res.end('not found');
@@ -757,8 +775,40 @@ class NativeQQCallDaemon {
       silenceHangupSec: cfg.silenceHangupSec,
       defaultCity: cfg.defaultCity,
       screenEngine: this.screenEngine,
+      getGameStatus: async () => {
+        try {
+          const gameBase = `http://127.0.0.1:${Number(cfg.raw?.game?.port || 3350)}`;
+          const token = readConsoleToken();
+          const r = await fetch(`${gameBase}/api/game/status`, {
+            headers: token ? { 'X-Console-Token': token } : {},
+            signal: AbortSignal.timeout(800),
+          });
+          if (r.ok) return await r.json();
+        } catch {}
+        return null;
+      },
       log,
       onSidecarTask: async (task) => {
+        if (task.kind === 'game') {
+          try {
+            const gameBase = `http://127.0.0.1:${Number(cfg.raw?.game?.port || 3350)}`;
+            const token = readConsoleToken();
+            const r = await fetch(`${gameBase}/api/game/command`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                ...(token ? { 'X-Console-Token': token } : {}),
+              },
+              body: JSON.stringify({ from: callerName, text: task.query, via: 'voice' }),
+              signal: AbortSignal.timeout(8000),
+            });
+            const d = await r.json().catch(() => null);
+            return d?.reply || '';
+          } catch (err) {
+            log(`[call-adapter] 游戏指令转发失败: ${err?.message ?? err}`);
+            return '';
+          }
+        }
         if (task.kind === 'remember') {
           const token = readConsoleToken();
           const res = await fetch(`${cfg.bridgeBase}/api/call/note`, {

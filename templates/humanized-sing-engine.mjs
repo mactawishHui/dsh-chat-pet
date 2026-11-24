@@ -102,9 +102,37 @@ async function probeDuration(file) {
 }
 
 async function jfetch(url, opts = {}, tries = 4) {
+  const useReplicateCurl = Boolean(CONFIG.replicateProxy && isReplicateUrl(url) && typeof opts.body !== 'object');
   let last;
   for (let i = 0; i < tries; i++) {
     try {
+      if (useReplicateCurl) {
+        const proxyArgs = i < tries - 1 ? ['-x', CONFIG.replicateProxy] : ['--noproxy', '*'];
+        const method = String(opts.method || 'GET').toUpperCase();
+        const headerArgs = [];
+        for (const [k, v] of Object.entries(opts.headers || {})) {
+          if (v !== undefined && v !== null && String(v) !== '') headerArgs.push('-H', `${k}: ${v}`);
+        }
+        const args = [
+          '-sS', '--max-time', String(Math.ceil((opts.timeoutMs || 60000) / 1000)),
+          '--connect-timeout', '15',
+          ...proxyArgs,
+          '-X', method,
+          ...headerArgs,
+        ];
+        if (typeof opts.body === 'string' && opts.body.length > 0) {
+          args.push('--data-raw', opts.body);
+        }
+        args.push('-w', '\n__HTTP_CODE__:%{http_code}', String(url));
+        const { stdout } = await execAsync('curl', args, { timeout: (opts.timeoutMs || 60000) + 10000 });
+        const marker = '\n__HTTP_CODE__:';
+        const idx = stdout.lastIndexOf(marker);
+        const status = idx >= 0 ? Number(stdout.slice(idx + marker.length).trim()) : 200;
+        const text = idx >= 0 ? stdout.slice(0, idx) : stdout;
+        let body = null;
+        try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text.slice(0, 240) }; }
+        return { ok: status >= 200 && status < 300, status, body };
+      }
       const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(opts.timeoutMs || 120000) });
       const text = await res.text();
       let body = null;
@@ -440,23 +468,25 @@ export async function searchAndDownloadBilibiliSong({ song, artist = '', bvid: e
   return picked;
 }
 
-// ── Paraformer 歌词精确打点，自动切出“主歌+副歌”黄金 45s ────────────────────
-async function transcribeTimestamps(audioPath, maxSec = 105) {
+// ── Paraformer 歌词精确打点（支持任意起点与全曲扫描） ─────────────────────────
+async function transcribeTimestamps(audioPath, { startSec = 0, maxSec = 120 } = {}) {
   const key = getDashscopeKey();
   const WS = loadWsClass();
   if (!key || !WS) return [];
 
-  const pcmPath = `${audioPath}.asr16k.wav`;
+  const pcmPath = `${audioPath}.asr16k.${Date.now()}.wav`;
   try {
-    await ff(['-i', audioPath, '-t', String(maxSec), '-ac', '1', '-ar', '16000', pcmPath], 60000);
+    const ssArgs = startSec > 0.05 ? ['-ss', String(startSec.toFixed(2))] : [];
+    await ff([...ssArgs, '-i', audioPath, '-t', String(maxSec), '-ac', '1', '-ar', '16000', pcmPath], 90000);
     const pcm = fs.readFileSync(pcmPath).subarray(44);
+    if (pcm.length < 3200) return [];
     const sentences = [];
     const taskId = `sing_asr_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
 
     await new Promise((resolve) => {
       let settled = false;
       const done = () => { if (!settled) { settled = true; resolve(); } };
-      const timerGuard = setTimeout(done, 45000);
+      const timerGuard = setTimeout(done, Math.max(45000, Math.round(maxSec * 450)));
       const ws = new WS('wss://dashscope.aliyuncs.com/api-ws/v1/inference/', {
         headers: { Authorization: `Bearer ${key}` },
       });
@@ -489,13 +519,13 @@ async function transcribeTimestamps(audioPath, maxSec = 105) {
             }
             try { ws.send(pcm.subarray(off, off + 6400)); } catch {}
             off += 6400;
-          }, 15);
+          }, 12);
         } else if (ev === 'result-generated') {
           const s = m.payload?.output?.sentence;
-          if (s?.sentence_end && s.text && String(s.text).trim().length >= 2) {
+          if (s?.sentence_end && s.text && String(s.text).trim().length >= 1) {
             sentences.push({
-              begin: (Number(s.begin_time) || 0) / 1000,
-              end: (Number(s.end_time) || 0) / 1000,
+              begin: startSec + (Number(s.begin_time) || 0) / 1000,
+              end: startSec + (Number(s.end_time) || 0) / 1000,
               text: String(s.text).trim(),
             });
           }
@@ -517,35 +547,318 @@ async function transcribeTimestamps(audioPath, maxSec = 105) {
   }
 }
 
-async function locateSongWindow(audioPath, { start = null, seconds = 44, coarse = true, log = console.error } = {}) {
+function resolveLengthSpec(length = 'half', seconds = null) {
+  const norm = String(length || '').toLowerCase().trim();
+  if (norm === 'snippet' || norm === 'short' || norm === '浅唱') {
+    return { length: 'snippet', coarseDur: 78, minDur: 22, targetDur: 45, maxDur: 55.5 };
+  }
+  if (norm === 'full' || norm === 'complete' || norm === '整首' || norm === '完整') {
+    return { length: 'full', coarseDur: 260, minDur: 85, targetDur: 215, maxDur: 255 };
+  }
+  if (norm === 'continue' || norm === 'next' || norm === '继续') {
+    return { length: 'continue', coarseDur: 155, minDur: 22, targetDur: 96, maxDur: 148 };
+  }
+  if (norm === 'half' || norm === '半首') {
+    return { length: 'half', coarseDur: 138, minDur: 50, targetDur: 92, maxDur: 124 };
+  }
+  // 兼容旧调用仅传 seconds 时自动推断档位
+  if (seconds !== null && seconds !== undefined && Number.isFinite(Number(seconds)) && Number(seconds) > 0) {
+    const s = Number(seconds);
+    if (s <= 56) return { length: 'snippet', coarseDur: 78, minDur: 22, targetDur: Math.min(52, Math.max(28, s)), maxDur: 55.5 };
+    if (s >= 135) return { length: 'full', coarseDur: Math.min(260, s + 25), minDur: 85, targetDur: Math.min(225, s), maxDur: Math.min(255, s + 20) };
+    return { length: 'half', coarseDur: 138, minDur: 50, targetDur: s, maxDur: Math.min(126, s + 24) };
+  }
+  return { length: 'half', coarseDur: 138, minDur: 50, targetDur: 92, maxDur: 124 };
+}
+
+async function locateSongWindow(audioPath, {
+  start = null,
+  continueFromSec = null,
+  length = 'half',
+  seconds = null,
+  coarse = true,
+  log = console.error,
+} = {}) {
   const totalDur = await probeDuration(audioPath);
-  const targetSec = Math.min(46, Math.max(20, Number(seconds) || 44));
+  const spec = resolveLengthSpec(length, seconds);
+
   if (start !== null && start !== undefined && Number.isFinite(Number(start)) && Number(start) >= 0) {
     const s = Number(start);
-    const dur = totalDur > 0 ? Math.min(targetSec, Math.max(10, totalDur - s)) : targetSec;
-    return { start: s, duration: dur, reason: 'explicit', exactTrim: false };
-  }
-  if (totalDur > 0 && totalDur <= targetSec + 4) {
-    return { start: 0, duration: totalDur, reason: 'short-source', exactTrim: false };
+    const reqDur = Number(seconds) > 0 ? Number(seconds) : spec.targetDur;
+    const dur = totalDur > 0 ? Math.min(reqDur, Math.max(10, totalDur - s)) : reqDur;
+    return { start: s, duration: dur, totalDur, spec, reason: 'explicit', exactTrim: false };
   }
 
-  // 两阶段锁句裁剪·阶段 A：先切出宽裕 62s 粗窗口（首句前足足倒退 3.2s，绝不吞掉轻声民谣的开头 1~2 字！），
-  // 待 Demucs 剥离纯净人声轨后，再由 vocal-humanizer.py --stage find_window 按真实静音缝做 10ms 级精确锁句！
-  const coarseDur = coarse ? 62 : targetSec;
-  const sentences = await transcribeTimestamps(audioPath, Math.min(120, Math.ceil(totalDur || 120)));
+  // 续唱模式（“继续唱”）：从上一首结束处往后扫描，自动跳过 15~30s 纯音乐间奏直奔下一完整乐段！
+  if (continueFromSec !== null && continueFromSec !== undefined && Number.isFinite(Number(continueFromSec)) && Number(continueFromSec) > 1) {
+    const baseFrom = Number(continueFromSec);
+    if (totalDur > 0 && baseFrom >= totalDur - 11) {
+      throw new Error('这首歌刚才已经唱到最后一句啦，没有后面的段落了');
+    }
+    const scanMax = totalDur > 0 ? Math.min(120, Math.ceil(totalDur - baseFrom)) : 120;
+    const sentences = await transcribeTimestamps(audioPath, { startSec: baseFrom, maxSec: scanMax });
+    const first = sentences.find((s) => s.end - s.begin >= 0.6 && s.text.length >= 2) || sentences[0];
+    const winStart = first ? Math.max(baseFrom, first.begin - 2.6) : baseFrom;
+    const maxAvail = totalDur > 0 ? Math.max(12, totalDur - winStart) : spec.coarseDur;
+    const dur = Math.min(spec.coarseDur, maxAvail);
+    log(`[sing-engine] 续唱定位(from=${baseFrom.toFixed(1)}s) 命中 ${sentences.length} 句 -> 粗切 ${winStart.toFixed(1)}s ~ ${(winStart + dur).toFixed(1)}s (${dur.toFixed(1)}s)`);
+    return { start: winStart, duration: dur, totalDur, spec, reason: 'continue-coarse', exactTrim: coarse };
+  }
+
+  if (totalDur > 0 && totalDur <= spec.minDur + 12) {
+    return { start: 0, duration: totalDur, totalDur, spec, reason: 'short-source', exactTrim: coarse };
+  }
+
+  // 两阶段锁句/锁段裁剪·阶段 A：
+  // 混音版 Paraformer 在轻声吉他前奏（如《晴天》“故事的小黄花”）常漏掉最前 10~15s 才识别到第一句！
+  // 因此 half/full 直接从 0s 起切（把完整前奏+主歌1+副歌1 交给 Demucs，再在零伴奏纯净人声轨上精准锁第一句），
+  // snippet 也向前足足倒退 12s，彻底根绝切丢歌曲真正第一句！
+  if (coarse && (spec.length === 'half' || spec.length === 'full')) {
+    const startSec = 0;
+    const coarseDur = spec.length === 'full' ? Math.min(260, totalDur || 260) : Math.min(155, totalDur || 155);
+    const dur = totalDur > 0 ? Math.min(coarseDur, totalDur) : coarseDur;
+    log(`[sing-engine] 阶段 A 全开场粗切(${spec.length}): 0.0s ~ ${dur.toFixed(1)}s (${dur.toFixed(1)}s，防漏轻声首句，后续在纯净人声轨锁完整乐段)`);
+    return { start: startSec, duration: dur, totalDur, spec, reason: 'full-head-coarse', exactTrim: true };
+  }
+
+  const coarseDur = coarse ? spec.coarseDur : spec.targetDur;
+  const sentences = await transcribeTimestamps(audioPath, { startSec: 0, maxSec: Math.min(120, Math.ceil(totalDur || 120)) });
   if (sentences.length >= 1) {
     const first = sentences.find((s) => s.end - s.begin >= 0.7 && s.text.length >= 2) || sentences[0];
-    const winStart = Math.max(0, first.begin - (coarse ? 3.2 : 1.2));
+    const winStart = Math.max(0, first.begin - (coarse ? 12.0 : 1.2));
     const maxAvail = totalDur > 0 ? Math.max(20, totalDur - winStart) : coarseDur;
     const dur = Math.min(coarseDur, maxAvail);
-    log(`[sing-engine] Paraformer 粗定位命中 ${sentences.length} 句 -> 粗切 ${winStart.toFixed(1)}s ~ ${(winStart + dur).toFixed(1)}s (${dur.toFixed(1)}s，后续按纯净人声轨精确锁句)`);
-    return { start: winStart, duration: dur, reason: 'paraformer-coarse', exactTrim: coarse };
+    log(`[sing-engine] Paraformer 粗定位(${spec.length})命中 ${sentences.length} 句 -> 粗切 ${winStart.toFixed(1)}s ~ ${(winStart + dur).toFixed(1)}s (${dur.toFixed(1)}s，后续按纯净人声轨锁完整乐段)`);
+    return { start: winStart, duration: dur, totalDur, spec, reason: 'paraformer-coarse', exactTrim: coarse };
   }
 
   const fallbackStart = totalDur > 85 ? 14 : 0;
   const fallbackDur = totalDur > 0 ? Math.min(coarseDur, Math.max(20, totalDur - fallbackStart)) : coarseDur;
-  log(`[sing-engine] 歌词打点未命中，粗切 ${fallbackStart}s ~ ${(fallbackStart + fallbackDur).toFixed(1)}s`);
-  return { start: fallbackStart, duration: fallbackDur, reason: 'fallback-coarse', exactTrim: coarse };
+  log(`[sing-engine] 歌词打点未命中(${spec.length})，粗切 ${fallbackStart}s ~ ${(fallbackStart + fallbackDur).toFixed(1)}s`);
+  return { start: fallbackStart, duration: fallbackDur, totalDur, spec, reason: 'fallback-coarse', exactTrim: coarse };
+}
+
+/**
+ * 阶段 B-2：在 Demucs 分离后的 100% 纯净人声轨上跑 Paraformer 歌词识别，
+ * 再交由极速 LLM 按音乐段落（完整四句联 / 完整主歌+副歌 / 进间奏前收尾）选出最完整的起止句号与多段切分点！
+ */
+async function pickStanzaWindowWithLlm({
+  vocalRaw,
+  phrasesDetail,
+  totalClipDur,
+  songTitle = '',
+  spec,
+  log = console.error,
+}) {
+  const key = getDashscopeKey();
+  if (!key || !Array.isArray(phrasesDetail) || phrasesDetail.length < 3) return null;
+
+  const asrSents = await transcribeTimestamps(vocalRaw, { startSec: 0, maxSec: Math.min(265, Math.ceil(totalClipDur + 2)) });
+  if (!asrSents || asrSents.length < 2) return null;
+
+  // 将纯净人声 ASR 歌词按时间重叠对齐到精确声学乐句 phrasesDetail 上
+  const annotated = phrasesDetail.map((p) => {
+    const texts = [];
+    for (const s of asrSents) {
+      const ov = Math.min(p.end, s.end) - Math.max(p.start, s.begin);
+      const sDur = Math.max(0.15, s.end - s.begin);
+      const pDur = Math.max(0.15, p.end - p.start);
+      if (ov >= Math.min(0.25, sDur * 0.35, pDur * 0.35)) {
+        texts.push(s.text);
+      }
+    }
+    return { ...p, text: texts.join(' ').trim() };
+  });
+
+  const nonEmptyCount = annotated.filter((x) => x.text.length >= 2).length;
+  if (nonEmptyCount < 2) return null;
+
+  const firstSingStart = annotated[0]?.start || 0;
+  const linesText = annotated
+    .map((p) => {
+      const cumSec = Math.max(0, p.end - firstSingStart);
+      return `[${p.idx}] ${p.start.toFixed(1)}s-${p.end.toFixed(1)}s (自首唱累计${cumSec.toFixed(0)}s, 后停${p.gap_after.toFixed(1)}s${p.chaotic ? ',多人合唱/混沌' : ''}) ${p.text || '(哼唱/长音)'}`;
+    })
+    .join('\n');
+
+  const modeHint = spec.length === 'snippet'
+    ? '【浅唱一段】选 1 个完整乐段（约 30~54 秒，如完整 4 句主歌或完整副歌），确保单条 58 秒语音装得下'
+    : spec.length === 'full'
+      ? '【唱完整一首】从全曲第 1 个完整唱段一直唱到全曲最后 1 句完整收尾（尽量覆盖全曲）'
+      : spec.length === 'continue'
+        ? '【续唱后半首】从紧接上文的下一个完整乐段第 1 句开始，唱完完整一大段或一直唱到全曲结尾'
+        : '【唱半首（默认）】选完整的前半首——把「完整主歌 + 导歌 + 完整第一遍副歌」唱完，在进间奏/副歌彻底收束处干净结束（约 65~118 秒；若歌曲本身较短则唱完完整一大段）';
+
+  const prompt = [
+    `以下是歌曲${songTitle ? `《${songTitle}》` : ''}纯净人声轨的逐句时间戳、句后停顿时长与识别歌词：`,
+    linesText,
+    '',
+    `演唱目标：${modeHint}。参考时长区间 ${spec.minDur.toFixed(0)}~${spec.maxDur.toFixed(0)} 秒（目标约 ${spec.targetDur.toFixed(0)} 秒）。`,
+    '请严格遵守以下音乐段落铁律，选出起止句号 startIdx、endIdx：',
+    '1. 起点 startIdx 必须是完整乐段的第 1 句（跳过开头 <0.2s 残句或电影念白对白）；',
+    '2. 终点 endIdx **必须落在完整音乐段落/四句联/副歌最后一句的句尾**（语义完整、韵脚收束，优先选后停顿较长或进间奏前的自然段落尾），**严禁停在四句段落的第 2 或第 3 句、严禁停在问答/排比未完的上句！** 宁可比目标多唱 6~10 秒把最后一句唱完，也绝不腰斩段落；',
+    '3. 若尾部出现标注「多人合唱/混沌」的杂乱段落，尽量在其之前一完整乐段收尾；',
+    '4. 如果你选出的总时长超过 55 秒（需要自动拆成多条 ≤55 秒的 QQ 语音条），请同时给出切分句号数组 splitAfter（每个元素 s 表示在第 s 句结束后的停顿处切一刀，切分点也必须落在完整乐句/小段结尾，确保切出的每一段都 ≤55 秒且 ≥16 秒；不需要拆分则给空数组 []）。',
+    '严格只输出一行 JSON，不要任何解释：{"startIdx": 0, "endIdx": 11, "splitAfter": [5], "reason": "简短说明起止段落"}',
+  ].join('\n');
+
+  try {
+    const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen-plus-latest',
+        temperature: 0.1,
+        max_tokens: 260,
+        enable_thinking: false,
+        messages: [
+          { role: 'system', content: '你是专业华语声乐制作人与音乐结构编辑，擅长按完整乐段（四句联/主歌/副歌）精准定剪歌曲。只输出严格 JSON。' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    let raw = String(data?.choices?.[0]?.message?.content || '').trim();
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const s = raw.indexOf('{');
+    const e = raw.lastIndexOf('}');
+    if (s < 0 || e <= s) return null;
+    const parsed = JSON.parse(raw.slice(s, e + 1));
+
+    const startIdx = Number(parsed.startIdx);
+    const endIdx = Number(parsed.endIdx);
+    if (!Number.isInteger(startIdx) || !Number.isInteger(endIdx)) return null;
+    if (startIdx < 0 || endIdx >= annotated.length || endIdx < startIdx) return null;
+
+    // 映射回 10ms 精确声学边界（严守 trimEnd <= next_start - 0.16s，数学上绝不漏下句半个字！）
+    const pFirst = annotated[startIdx];
+    const prevEnd = startIdx > 0 ? annotated[startIdx - 1].end : 0.0;
+    const gapBefore = Math.max(0, pFirst.start - prevEnd);
+    let leadPad = startIdx === 0 ? Math.min(0.95, gapBefore) : Math.min(0.95, Math.max(0.20, gapBefore * 0.55));
+    if (startIdx > 0 && pFirst.start - leadPad < prevEnd + 0.18) {
+      leadPad = Math.max(0.05, pFirst.start - (prevEnd + 0.18));
+    }
+    const trimStart = Math.max(0, pFirst.start - leadPad);
+
+    const pLast = annotated[endIdx];
+    const nextStart = endIdx + 1 < annotated.length ? annotated[endIdx + 1].start : totalClipDur;
+    const gapAfter = Math.max(0, nextStart - pLast.end);
+    const tailPad = Math.min(1.15, Math.max(0.18, gapAfter * 0.55));
+    const trimEnd = endIdx + 1 < annotated.length
+      ? Math.min(pLast.end + tailPad, Math.max(pLast.end + 0.04, nextStart - 0.16))
+      : Math.min(totalClipDur, pLast.end + 1.05);
+
+    const dur = trimEnd - trimStart;
+    const minAllowed = Math.max(14, Math.min(spec.minDur * 0.72, totalClipDur * 0.55));
+    const maxAllowed = spec.length === 'snippet' ? 56.5 : spec.maxDur + 12.0;
+    if (!Number.isFinite(dur) || dur < minAllowed || dur > maxAllowed) {
+      log(`[sing-engine] LLM 乐段时长越界 (${dur.toFixed(1)}s, 允许 ${minAllowed.toFixed(0)}~${maxAllowed.toFixed(0)}s)，回退声学锁段`);
+      return null;
+    }
+
+    const rawSplits = Array.isArray(parsed.splitAfter) ? parsed.splitAfter.map(Number).filter((x) => Number.isInteger(x) && x >= startIdx && x < endIdx) : [];
+    const reason = String(parsed.reason || '').slice(0, 60);
+    return {
+      start: Number(trimStart.toFixed(3)),
+      end: Number(trimEnd.toFixed(3)),
+      dur: Number(dur.toFixed(3)),
+      start_idx: startIdx,
+      end_idx: endIdx,
+      phrases: endIdx - startIdx + 1,
+      total_phrases: annotated.length,
+      splitAfter: [...new Set(rawSplits)].sort((a, b) => a - b),
+      reason,
+      annotated,
+    };
+  } catch (err) {
+    log(`[sing-engine] LLM 乐段识别回退(${err?.message ?? err})`);
+    return null;
+  }
+}
+
+/**
+ * 为超过单条 QQ 语音上限（>56.5s）的长音频计算精确的「乐句/乐段静音缝切分点」（相对修剪后 0..dur 的秒数），
+ * 确保每条 QQ 语音都 <=55.5s 且绝不在歌词字中间硬切！
+ */
+function computeStanzaSplitPoints({ phrasesDetail = [], startIdx = 0, endIdx = -1, trimStart = 0, totalDur = 0, llmSplitAfter = [], maxPartSec = 55.0 }) {
+  if (totalDur <= 56.8) return [];
+  const slice = (phrasesDetail || []).slice(startIdx, endIdx >= startIdx ? endIdx + 1 : undefined);
+  const candidates = [];
+  for (let i = 0; i < slice.length - 1; i++) {
+    const cur = slice[i];
+    const nxt = slice[i + 1];
+    const gap = Math.max(0, nxt.start - cur.end);
+    const mid = cur.end + Math.min(gap * 0.5, Math.max(0.06, gap - 0.12)) - trimStart;
+    if (mid > 8 && mid < totalDur - 8) {
+      candidates.push({
+        origIdx: cur.idx,
+        sec: Number(mid.toFixed(3)),
+        gap,
+        isLlmPick: llmSplitAfter.includes(cur.idx),
+      });
+    }
+  }
+
+  // 先检验 LLM 建议的切分点是否本身已经满足每段 <= maxPartSec 且 >= 12s
+  if (llmSplitAfter.length) {
+    const llmSecs = candidates.filter((c) => c.isLlmPick).map((c) => c.sec).sort((a, b) => a - b);
+    const bounds = [0, ...llmSecs, totalDur];
+    const allOk = bounds.slice(1).every((b, idx) => (b - bounds[idx]) <= maxPartSec && (b - bounds[idx]) >= 10);
+    if (llmSecs.length && allOk) return llmSecs;
+  }
+
+  // 否则按最优静音大缝贪心切分：尽量落在 34~54.5s 范围内停顿最长（优先乐段缝）的位置
+  const splits = [];
+  let cursor = 0;
+  while (totalDur - cursor > 56.5) {
+    const minCut = cursor + 22.0;
+    const maxCut = cursor + maxPartSec;
+    const inWin = candidates.filter((c) => c.sec >= minCut && c.sec <= maxCut && (totalDur - c.sec) >= 10.0);
+    if (inWin.length) {
+      // 优先 LLM 推荐点 + 大停顿（段落缝） + 不要切得太早导致后面多出一条
+      const best = inWin.reduce((a, b) => {
+        const sa = (a.isLlmPick ? 40 : 0) + Math.min(4.0, a.gap) * 18 + (a.sec - cursor) * 0.35;
+        const sb = (b.isLlmPick ? 40 : 0) + Math.min(4.0, b.gap) * 18 + (b.sec - cursor) * 0.35;
+        return sb > sa ? b : a;
+      });
+      splits.push(best.sec);
+      cursor = best.sec;
+    } else {
+      const fallback = Number(Math.min(totalDur - 10, cursor + 53.0).toFixed(3));
+      if (fallback <= cursor + 8) break;
+      splits.push(fallback);
+      cursor = fallback;
+    }
+  }
+  return splits;
+}
+
+/**
+ * 将长成品 WAV 按精确乐段切分点拆成多条 ≤56s 的无缝 QQ 语音分段（带 50ms 柔淡入淡出防爆音）
+ */
+async function sliceWavBySplitPoints(wavFile, splitPointsSec = [], outPrefix = '') {
+  if (!Array.isArray(splitPointsSec) || !splitPointsSec.length) return [wavFile];
+  const totalDur = await probeDuration(wavFile);
+  if (totalDur <= 57.5) return [wavFile];
+  const pts = splitPointsSec.filter((t) => Number.isFinite(t) && t > 5 && t < totalDur - 5).sort((a, b) => a - b);
+  if (!pts.length) return [wavFile];
+  const bounds = [0, ...pts, totalDur];
+  const base = outPrefix || wavFile.replace(/\.wav$/i, '');
+  const segFiles = [];
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const s = bounds[i];
+    const d = Math.max(1.0, bounds[i + 1] - s);
+    const dst = `${base}-p${i + 1}.wav`;
+    const fades = [];
+    if (i > 0) fades.push('afade=t=in:st=0:d=0.05');
+    if (i < bounds.length - 2) fades.push(`afade=t=out:st=${Math.max(0.1, d - 0.06).toFixed(3)}:d=0.06`);
+    const afArgs = fades.length ? ['-af', fades.join(',')] : [];
+    await ff(['-ss', s.toFixed(3), '-i', wavFile, '-t', d.toFixed(3), ...afArgs, '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', dst], 60000);
+    segFiles.push(dst);
+  }
+  return segFiles;
 }
 
 // ── 同声纹口白生成（自然随机池，避免每次一模一样） ───────────────────────────
@@ -623,9 +936,11 @@ async function runHumanizedVocalPipeline({
   level = 'natural',
   songTitle = '',
   isOriginal = false,
-  framing = true,
+  framing = false,
   exactPhraseTrim = false,
-  targetSongSec = 41,
+  lengthSpec = null,
+  clipOriginSec = 0,
+  targetSongSec = 92,
   introText,
   outroText,
   pitchOverride = null,
@@ -634,17 +949,21 @@ async function runHumanizedVocalPipeline({
   const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
   const levels = mapLevels(level);
   const seedBase = Math.floor(Date.now() % 100000);
+  const spec = lengthSpec || resolveLengthSpec('half', targetSongSec);
+  const hasExplicitIntro = introText !== undefined && String(introText || '').trim().length > 0;
+  const hasExplicitOutro = outroText !== undefined && String(outroText || '').trim().length > 0;
+  const useFraming = Boolean(framing === true || hasExplicitIntro || hasExplicitOutro);
 
-  // 1. Demucs htdemucs_ft 零漏音分轨（全链路无损 FLAC 传输，省 3~6 倍带宽且 100% 保留立体声相位；清唱模式跳过伴奏轨下载）
+  // 1. Demucs htdemucs_ft 零漏音分轨（上传用 256k AAC/M4A 省 5 倍上行带宽，下载用无损 FLAC 100% 保留立体声相位；清唱模式跳过伴奏轨下载）
   log(`[sing-engine] Demucs htdemucs_ft 分离人声与伴奏…`);
   let uploadClip = clipWav;
   let uploadMime = 'audio/wav';
-  const clipFlac = path.join(workDir, 'clip.flac');
+  const clipM4a = path.join(workDir, 'clip.m4a');
   try {
-    await ff(['-i', clipWav, '-c:a', 'flac', '-compression_level', '5', clipFlac], 60000);
-    if (fs.existsSync(clipFlac) && fs.statSync(clipFlac).size > 20 * 1024) {
-      uploadClip = clipFlac;
-      uploadMime = 'audio/flac';
+    await ff(['-i', clipWav, '-c:a', 'aac', '-b:a', '256k', clipM4a], 90000);
+    if (fs.existsSync(clipM4a) && fs.statSync(clipM4a).size > 20 * 1024) {
+      uploadClip = clipM4a;
+      uploadMime = 'audio/mp4';
     }
   } catch {}
   const clipUrl = await uploadToReplicate(uploadClip, uploadMime);
@@ -653,7 +972,7 @@ async function runHumanizedVocalPipeline({
     model_name: 'htdemucs_ft',
     stem: 'vocals',
     output_format: 'flac',
-  }, 'Demucs(htdemucs_ft)');
+  }, 'Demucs(htdemucs_ft)', 260);
 
   if (!stems?.vocals) throw new Error('Demucs 未产出人声轨');
   const vocalFlac = path.join(workDir, 'vocals.flac');
@@ -666,54 +985,112 @@ async function runHumanizedVocalPipeline({
   let vocalRaw = path.join(workDir, 'vocals.wav');
   let instRaw = path.join(workDir, 'other.wav');
   await Promise.all([
-    ff(['-i', vocalFlac, '-c:a', 'pcm_s16le', vocalRaw], 60000),
-    needInst ? ff(['-i', instFlac, '-c:a', 'pcm_s16le', instRaw], 60000) : Promise.resolve(),
+    ff(['-i', vocalFlac, '-c:a', 'pcm_s16le', vocalRaw], 90000),
+    needInst ? ff(['-i', instFlac, '-c:a', 'pcm_s16le', instRaw], 90000) : Promise.resolve(),
   ]);
 
-  // 1.5 两阶段锁句裁剪·阶段 B：在 Demucs 纯净人声轨上做 10ms 级完整乐句起止锁定（绝不半句开唱或漏唱下句两字！）
+  // 1.5 两阶段锁段裁剪·阶段 B：先用声学乐句分析得到 10ms 精确边界与混沌段标记，
+  // 再用纯净人声 Paraformer + LLM 锁定「完整四句/主副歌乐段」（绝不停在四句第 3 句，绝不漏唱下句半个字！）
+  let trimRelStart = 0;
+  let trimRelEnd = await probeDuration(vocalRaw);
+  let splitPointsSec = [];
+  let stanzaReason = '';
   if (exactPhraseTrim) {
     try {
-      const maxDur = Math.min(44.5, Math.max(32, Number(targetSongSec) + 3.5));
       const { stdout } = await execAsync(CONFIG.humanizerPy, [
         CONFIG.humanizerScript,
         '--stage', 'find_window',
         '--vocal', vocalRaw,
-        '--min-dur', '20.5',
-        '--target-dur', String(Math.min(41, Math.max(26, Number(targetSongSec) || 40))),
-        '--max-dur', String(maxDur),
-      ], { timeout: 60000 });
-      const win = JSON.parse(stdout.trim().split('\n').at(-1) || '{}');
-      if (Number.isFinite(win.start) && Number.isFinite(win.dur) && win.dur >= 14) {
+        '--min-dur', String(spec.minDur),
+        '--target-dur', String(spec.targetDur),
+        '--max-dur', String(spec.maxDur),
+      ], { timeout: 120000 });
+      const pyWin = JSON.parse(stdout.trim().split('\n').at(-1) || '{}');
+      let chosen = pyWin;
+      let llmSplitAfter = [];
+
+      // 阶段 B-2：在零伴奏纯净人声轨上识别歌词 + LLM 锁完整音乐段落（失败则无感回退声学乐段算法）
+      if (Array.isArray(pyWin.phrases_detail) && pyWin.phrases_detail.length >= 3) {
+        const llmWin = await pickStanzaWindowWithLlm({
+          vocalRaw,
+          phrasesDetail: pyWin.phrases_detail,
+          totalClipDur: pyWin.total_dur || trimRelEnd,
+          songTitle,
+          spec,
+          log,
+        });
+        if (llmWin && Number.isFinite(llmWin.dur) && llmWin.dur >= 14) {
+          chosen = { ...pyWin, ...llmWin };
+          llmSplitAfter = llmWin.splitAfter || [];
+          stanzaReason = llmWin.reason || '';
+          log(`[sing-engine] 🎼 LLM 乐段锁边(${spec.length}): [${llmWin.start_idx}..${llmWin.end_idx}] ${llmWin.start.toFixed(2)}s~${llmWin.end.toFixed(2)}s (${llmWin.dur.toFixed(1)}s, ${llmWin.phrases}/${llmWin.total_phrases}句)${stanzaReason ? ` | ${stanzaReason}` : ''}`);
+        }
+      }
+
+      if (Number.isFinite(chosen.start) && Number.isFinite(chosen.dur) && chosen.dur >= 14) {
         const vTrim = path.join(workDir, 'vocals-locked.wav');
         const iTrim = path.join(workDir, 'other-locked.wav');
-        await ff(['-ss', String(win.start.toFixed(3)), '-i', vocalRaw, '-t', String(win.dur.toFixed(3)), '-c:a', 'pcm_s16le', vTrim]);
+        await ff(['-ss', String(chosen.start.toFixed(3)), '-i', vocalRaw, '-t', String(chosen.dur.toFixed(3)), '-c:a', 'pcm_s16le', vTrim], 90000);
         if (fs.existsSync(instRaw)) {
-          await ff(['-ss', String(win.start.toFixed(3)), '-i', instRaw, '-t', String(win.dur.toFixed(3)), '-c:a', 'pcm_s16le', iTrim]);
+          await ff(['-ss', String(chosen.start.toFixed(3)), '-i', instRaw, '-t', String(chosen.dur.toFixed(3)), '-c:a', 'pcm_s16le', iTrim], 90000);
           instRaw = iTrim;
         }
         vocalRaw = vTrim;
-        log(`[sing-engine] ✂️ 纯净人声精准锁句: ${win.start.toFixed(2)}s ~ ${win.end.toFixed(2)}s (${win.dur.toFixed(1)}s, ${win.phrases}/${win.total_phrases}句, HNR=${win.avg_hnr}dB)`);
+        trimRelStart = chosen.start;
+        trimRelEnd = chosen.end;
+        if (!stanzaReason) {
+          log(`[sing-engine] ✂️ 纯净人声精准锁段(${spec.length}): ${chosen.start.toFixed(2)}s ~ ${chosen.end.toFixed(2)}s (${chosen.dur.toFixed(1)}s, ${chosen.phrases}/${chosen.total_phrases}句, HNR=${chosen.avg_hnr}dB)`);
+        }
+        // 为超单条 57s 的长曲计算精确的乐段/乐句静音缝切分点（供 QQ 聊天无缝分条发送，实时通话照常连续整段播）
+        splitPointsSec = computeStanzaSplitPoints({
+          phrasesDetail: pyWin.phrases_detail || [],
+          startIdx: chosen.start_idx ?? 0,
+          endIdx: chosen.end_idx ?? ((pyWin.phrases_detail?.length || 1) - 1),
+          trimStart: chosen.start,
+          totalDur: chosen.dur,
+          llmSplitAfter,
+        });
+        if (splitPointsSec.length) {
+          log(`[sing-engine] 📎 长曲乐段无痕切分点: [${splitPointsSec.map((x) => `${x.toFixed(1)}s`).join(', ')}] (共 ${splitPointsSec.length + 1} 段)`);
+        }
       }
     } catch (e) {
-      log(`[sing-engine] 精准锁句跳过(${e.message})，沿用粗切窗`);
+      log(`[sing-engine] 精准锁段跳过(${e.message})，沿用粗切窗`);
     }
   }
 
-  // 2. Praat F0 基频测算 + 自动八度对齐定调（常规 172~440Hz 原调 0 / 低沉男声 <172Hz 升 +12，伴奏零失真！）
+  // 2. Praat F0 基频测算 + 贴合本人 268Hz 说话声线的智能定调（女声原调 0 / 流行男声 +3~+6 伴奏同步 rubberband 移调 / 低沉男声 +12 伴奏 0）
   let pitchChange = 0;
-  let f0Info = { median_hz: 0, suggested_pitch_shift: 0 };
+  let bgmPitchChange = 0;
+  let f0Info = { median_hz: 0, suggested_pitch_shift: 0, bgm_pitch_shift: 0 };
   if (pitchOverride !== null && pitchOverride !== undefined && Number.isFinite(Number(pitchOverride))) {
     pitchChange = Number(pitchOverride);
+    bgmPitchChange = (safeMode !== 'acappella' && Math.abs(pitchChange) > 0 && Math.abs(pitchChange) < 12) ? pitchChange : 0;
   } else {
     try {
       const { stdout } = await execAsync(CONFIG.humanizerPy, [
-        CONFIG.humanizerScript, '--stage', 'measure_f0', '--vocal', vocalRaw,
-      ], { timeout: 60000 });
+        CONFIG.humanizerScript, '--stage', 'measure_f0', '--vocal', vocalRaw, '--mode', safeMode,
+      ], { timeout: 90000 });
       f0Info = JSON.parse(stdout.trim().split('\n').at(-1) || '{}');
       pitchChange = Number(f0Info.suggested_pitch_shift) || 0;
+      bgmPitchChange = Number(f0Info.bgm_pitch_shift) || 0;
     } catch {}
   }
-  log(`[sing-engine] 原唱基频中位数=${f0Info.median_hz || '?'}Hz (p90=${f0Info.p90_hz || '?'}Hz) -> pitch_change=${pitchChange}`);
+  log(`[sing-engine] 原唱基频中位数=${f0Info.median_hz || '?'}Hz (p90=${f0Info.p90_hz || '?'}Hz) -> vocal_shift=${pitchChange >= 0 ? '+' : ''}${pitchChange}, bgm_shift=${bgmPitchChange >= 0 ? '+' : ''}${bgmPitchChange}`);
+
+  // 2.5 若流行男声启用了非八度女声升调（+3~+6 半音），用 studio 级 rubberband 同步移调伴奏（原速零变味、和声 100% 锁死！）
+  if (bgmPitchChange !== 0 && safeMode !== 'acappella' && fs.existsSync(instRaw)) {
+    const ratio = Math.pow(2, bgmPitchChange / 12).toFixed(6);
+    const instShifted = path.join(workDir, 'other-shifted.wav');
+    await ff([
+      '-i', instRaw,
+      '-af', `rubberband=pitch=${ratio}:formant=preserved:pitchq=quality:transients=crisp:detector=compound:channels=together`,
+      '-c:a', 'pcm_s16le',
+      instShifted,
+    ], 180000);
+    instRaw = instShifted;
+    log(`[sing-engine] 🎹 伴奏同步移调 ${bgmPitchChange > 0 ? '+' : ''}${bgmPitchChange} 半音 (rubberband 保持原速零变味)`);
+  }
 
   // 3. Pre-RVC: 立体声 Mid/Side 居中主唱提纯(剥离宽混响/和声) + 去嗡鸣门限 + Praat TD-PSOLA 活人微瑕
   const vocalPreHum = path.join(workDir, 'vocal-prehum.wav');
@@ -725,10 +1102,15 @@ async function runHumanizedVocalPipeline({
     '--level', levels.pre,
     '--seed', String(seedBase),
     '--out', vocalPreHum,
-  ], { timeout: 120000 });
+  ], { timeout: 180000 });
 
-  // 4. RVC 换声（protect=0.45 保咬字清晰、index_rate=0.28 去金属嗡声）+ 并行生成同声纹前后口白（0 额外延迟！）
-  const lines = framing ? pickFramingLines({ mode: safeMode, songTitle, isOriginal, introText, outroText }) : { intro: '', outro: '' };
+  // 4. RVC 换声（protect=0.45 保咬字清晰、index_rate=0.28 去金属嗡声）+ 可选同声纹口白（默认关闭，不唱废话直接开唱！）
+  const lines = useFraming
+    ? {
+        intro: hasExplicitIntro ? String(introText).trim() : (framing === true ? pickFramingLines({ mode: safeMode, songTitle, isOriginal }).intro : ''),
+        outro: hasExplicitOutro ? String(outroText).trim() : (framing === true ? pickFramingLines({ mode: safeMode, songTitle, isOriginal }).outro : ''),
+      }
+    : { intro: '', outro: '' };
   const introWav = path.join(workDir, 'intro.wav');
   const outroWav = path.join(workDir, 'outro.wav');
 
@@ -746,17 +1128,17 @@ async function runHumanizedVocalPipeline({
         index_rate: 0.28,
         rms_mix_rate: 0.32,
         output_format: 'wav',
-      }, 'RVC-v2');
+      }, 'RVC-v2', 260);
       const url = Array.isArray(out) ? out.at(-1) : out;
       const dst = path.join(workDir, 'vocal-her.wav');
       await downloadFile(url, dst);
       return dst;
     })(),
-    framing && lines.intro ? synthesizeTtsClip(lines.intro, introWav) : Promise.resolve(''),
-    framing && lines.outro ? synthesizeTtsClip(lines.outro, outroWav) : Promise.resolve(''),
+    lines.intro ? synthesizeTtsClip(lines.intro, introWav) : Promise.resolve(''),
+    lines.outro ? synthesizeTtsClip(lines.outro, outroWav) : Promise.resolve(''),
   ]);
 
-  // 5. 确保 总时长(intro + song + outro) <= 58.5s（单条 QQ 语音完美装下不截断）
+  // 5. 若显式带口白且为单条浅唱模式，压在 58.8s 内；半首/全曲则保留完整长度并按乐段切分
   const [songDur, introDur, outroDur] = await Promise.all([
     probeDuration(rvcOut),
     gotIntro ? probeDuration(gotIntro) : Promise.resolve(0),
@@ -764,13 +1146,12 @@ async function runHumanizedVocalPipeline({
   ]);
   let useIntro = gotIntro;
   let useOutro = gotOutro;
-  if (songDur + introDur + outroDur > 58.8) {
-    // 优先保主歌与开场白，超 58.8s 时省掉收尾口白避免触发 QQ 60s 分段
+  if (spec.length === 'snippet' && songDur + introDur + outroDur > 58.8) {
     useOutro = '';
     if (songDur + introDur > 58.8) useIntro = '';
   }
 
-  // 6. Post-RVC: 智能防叠加换气 + 手机近麦/房间外放/KTV 声学 + 口白无缝封装 -> 24kHz 单声道 WAV
+  // 6. Post-RVC: 智能防叠加换气 + 手机近麦/房间外放/KTV 声学 + 封装 -> 24kHz 单声道 WAV
   const postArgs = [
     CONFIG.humanizerScript,
     '--stage', 'post_rvc',
@@ -787,30 +1168,52 @@ async function runHumanizedVocalPipeline({
   if (useIntro) postArgs.push('--intro', useIntro);
   if (useOutro) postArgs.push('--outro', useOutro);
 
-  await execAsync(CONFIG.humanizerPy, postArgs, { timeout: 120000 });
+  await execAsync(CONFIG.humanizerPy, postArgs, { timeout: 180000 });
   const finalDur = await probeDuration(outFile);
-  log(`[sing-engine] 完成 ${path.basename(outFile)} | mode=${safeMode} level=${level} pitch=${pitchChange} dur=${finalDur.toFixed(1)}s`);
+  // 若有开场白或前导 0.10s 垫片，把切分点平移对齐到最终成品 WAV 时间轴
+  const introShift = useIntro ? (introDur + (safeMode === 'acappella' ? 0.48 : 0.36)) : 0.10;
+  const finalSplitPoints = splitPointsSec.map((t) => Number((t + introShift).toFixed(3)));
+  const segments = finalDur > 57.5
+    ? await sliceWavBySplitPoints(outFile, finalSplitPoints.length ? finalSplitPoints : [Math.min(finalDur - 10, 52)])
+    : [outFile];
+
+  log(`[sing-engine] 完成 ${path.basename(outFile)} | mode=${safeMode} len=${spec.length} vShift=${pitchChange} bShift=${bgmPitchChange} dur=${finalDur.toFixed(1)}s segs=${segments.length}`);
   return {
     file: outFile,
+    segments,
+    splitPointsSec: finalSplitPoints,
     mode: safeMode,
+    length: spec.length,
     level,
     pitchChange,
+    bgmPitchChange,
     medianHz: f0Info.median_hz || 0,
     durationSec: Number(finalDur.toFixed(1)),
+    songStartSec: Number((clipOriginSec + trimRelStart).toFixed(2)),
+    songEndSec: Number((clipOriginSec + trimRelEnd).toFixed(2)),
+    stanzaReason,
   };
 }
 
-// ── 曲库 LRU 秒唱缓存（上限 60 首 ≈ 150MB，QQ 聊天与实时通话共享！） ───────────
-function songCacheId(song, mode = 'bedroom_bgm') {
+// ── 曲库 LRU 秒唱缓存（上限 60 首，按 mode + length 分档隔离，v5 纯唱无固定废话口白） ─
+function normalizeLengthKey(length = 'half') {
+  const s = String(length || 'half').toLowerCase().trim();
+  if (s === 'snippet' || s === 'short' || s === '浅唱') return 'snippet';
+  if (s === 'full' || s === 'complete' || s === '整首' || s === '完整') return 'full';
+  return 'half';
+}
+
+function songCacheId(song, mode = 'bedroom_bgm', length = 'half') {
   const norm = String(song || '').toLowerCase().replace(/[\s《》【】"'.,!?，。！？\-—_]/g, '');
   if (!norm) return '';
   const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
-  const hash = crypto.createHash('sha1').update(`${norm}|${safeMode}`).digest('hex').slice(0, 12);
-  return `${safeMode}-${hash}`;
+  const safeLen = normalizeLengthKey(length);
+  const hash = crypto.createHash('sha1').update(`${norm}|${safeMode}|${safeLen}|v5`).digest('hex').slice(0, 12);
+  return `${safeMode}-${safeLen}-v5-${hash}`;
 }
 
-export function findCachedSong({ song = '', mode = 'bedroom_bgm' } = {}) {
-  const cid = songCacheId(song, mode);
+export function findCachedSong({ song = '', mode = 'bedroom_bgm', length = 'half' } = {}) {
+  const cid = songCacheId(song, mode, length);
   if (!cid || !fs.existsSync(CONFIG.songCacheDir)) return null;
   const wavPath = path.join(CONFIG.songCacheDir, `${cid}.wav`);
   const metaPath = path.join(CONFIG.songCacheDir, `${cid}.json`);
@@ -825,9 +1228,18 @@ export function findCachedSong({ song = '', mode = 'bedroom_bgm' } = {}) {
       file: wavPath,
       song: meta.song || song,
       artist: meta.artist || '',
+      bvid: meta.bvid || '',
       mode: meta.mode || mode,
+      length: meta.length || normalizeLengthKey(length),
       durationSec: Number(meta.durationSec) || 0,
       pitchChange: Number(meta.pitchChange) || 0,
+      bgmPitchChange: Number(meta.bgmPitchChange) || 0,
+      songStartSec: Number(meta.songStartSec) || 0,
+      songEndSec: Number(meta.songEndSec) || 0,
+      totalDurSec: Number(meta.totalDurSec) || 0,
+      hasMoreAfter: Boolean(meta.hasMoreAfter),
+      splitPointsSec: Array.isArray(meta.splitPointsSec) ? meta.splitPointsSec : [],
+      stanzaReason: meta.stanzaReason || '',
       cached: true,
     };
   } catch {
@@ -835,8 +1247,24 @@ export function findCachedSong({ song = '', mode = 'bedroom_bgm' } = {}) {
   }
 }
 
-function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, durationSec = 0, pitchChange = 0 }) {
-  const cid = songCacheId(song, mode);
+function saveSongToCache({
+  song,
+  artist = '',
+  bvid = '',
+  mode = 'bedroom_bgm',
+  length = 'half',
+  wavFile,
+  durationSec = 0,
+  pitchChange = 0,
+  bgmPitchChange = 0,
+  songStartSec = 0,
+  songEndSec = 0,
+  totalDurSec = 0,
+  hasMoreAfter = false,
+  splitPointsSec = [],
+  stanzaReason = '',
+}) {
+  const cid = songCacheId(song, mode, length);
   if (!cid || !wavFile || !fs.existsSync(wavFile)) return;
   try {
     fs.mkdirSync(CONFIG.songCacheDir, { recursive: true });
@@ -844,11 +1272,22 @@ function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, dur
     const dstMeta = path.join(CONFIG.songCacheDir, `${cid}.json`);
     fs.copyFileSync(wavFile, dstWav);
     fs.writeFileSync(dstMeta, JSON.stringify({
+      version: 5,
       song,
       artist,
+      bvid,
       mode,
+      length: normalizeLengthKey(length),
       durationSec,
       pitchChange,
+      bgmPitchChange,
+      songStartSec,
+      songEndSec,
+      totalDurSec,
+      hasMoreAfter,
+      splitPointsSec,
+      stanzaReason,
+      framing: false,
       savedAt: new Date().toISOString(),
     }, null, 2));
 
@@ -871,7 +1310,7 @@ function saveSongToCache({ song, artist = '', mode = 'bedroom_bgm', wavFile, dur
 // ── 进行中同曲并发合并（防止同一首歌被重复点歌时跑多份 Demucs + RVC 互相挤兑） ─
 const INFLIGHT_COVERS = new Map();
 
-// ── 公开入口 1：点歌翻唱已有歌曲（支持歌名检索 / 曲库秒唱缓存 / 外部链接 / 本地音频） ─
+// ── 公开入口 1：点歌翻唱已有歌曲（支持歌名检索 / 曲库秒唱缓存 / 半首·整首·浅唱·续唱 / 外部链接 / 本地音频） ─
 export async function coverSong({
   song = '',
   artist = '',
@@ -879,10 +1318,12 @@ export async function coverSong({
   file = '',
   url = '',
   mode = 'bedroom_bgm',
+  length = 'half',
+  continueFromSec = null,
   level = 'natural',
   start = null,
-  seconds = 45,
-  framing = true,
+  seconds = null,
+  framing = false,
   useCache = true,
   intro,
   outro,
@@ -894,40 +1335,62 @@ export async function coverSong({
   fs.mkdirSync(outDir, { recursive: true });
   const safeMode = ['acappella', 'bedroom_bgm', 'ktv'].includes(mode) ? mode : 'bedroom_bgm';
   const resolvedTitle = String(song || '').replace(/[《》]/g, '').trim();
-  const canShareKey = Boolean(useCache && resolvedTitle && !file && !url && !bvid && start === null && !intro && !outro);
-  const inflightKey = canShareKey ? songCacheId(resolvedTitle, safeMode) : '';
+  const isContinue = String(length || '').toLowerCase() === 'continue' || (continueFromSec !== null && continueFromSec !== undefined && Number(continueFromSec) > 1);
+  const spec = resolveLengthSpec(isContinue ? 'continue' : length, seconds);
+  const wantsFraming = Boolean(framing === true || (intro && String(intro).trim()) || (outro && String(outro).trim()));
+  const canShareKey = Boolean(useCache && resolvedTitle && !file && !url && !bvid && !isContinue && start === null && !wantsFraming);
+  const inflightKey = canShareKey ? songCacheId(resolvedTitle, safeMode, spec.length) : '';
 
-  // 0. 命中曲库秒唱缓存（仅按歌名翻唱且未指定自定义起止/口白时直接 0 秒返回！）
+  // 0. 命中曲库秒唱缓存（仅按歌名翻唱且未指定自定义起止/口白/续唱时直接 0 秒返回！）
   if (canShareKey) {
-    const hit = findCachedSong({ song: resolvedTitle, mode: safeMode });
+    const hit = findCachedSong({ song: resolvedTitle, mode: safeMode, length: spec.length });
     if (hit) {
       const outFile = path.join(outDir, `cover-cached-${Date.now()}.wav`);
       fs.copyFileSync(hit.file, outFile);
-      log(`[sing-engine] ⚡ 命中曲库秒唱缓存: 《${resolvedTitle}》(${safeMode}, ${hit.durationSec}s)`);
+      const segments = hit.durationSec > 57.5 && hit.splitPointsSec?.length
+        ? await sliceWavBySplitPoints(outFile, hit.splitPointsSec)
+        : [outFile];
+      log(`[sing-engine] ⚡ 命中曲库秒唱缓存(v5): 《${resolvedTitle}》(${safeMode}/${spec.length}, ${hit.durationSec}s, ${segments.length}段)`);
       return {
         file: outFile,
+        segments,
+        splitPointsSec: hit.splitPointsSec || [],
         mode: safeMode,
+        length: spec.length,
         level,
         pitchChange: hit.pitchChange,
+        bgmPitchChange: hit.bgmPitchChange || 0,
         durationSec: hit.durationSec,
+        songStartSec: hit.songStartSec || 0,
+        songEndSec: hit.songEndSec || 0,
+        totalDurSec: hit.totalDurSec || 0,
+        hasMoreAfter: Boolean(hit.hasMoreAfter),
+        bvid: hit.bvid || '',
+        stanzaReason: hit.stanzaReason || '',
         song: resolvedTitle,
         artist: artist || hit.artist,
         cached: true,
       };
     }
-    // 0.5 并发去重：若完全相同的 (歌名, 模式) 正在渲染中，直接复用同一份 Promise 零重复开销！
+    // 0.5 并发去重：若完全相同的 (歌名, 模式, 档位) 正在渲染中，直接复用同一份 Promise 零重复开销！
     if (inflightKey && INFLIGHT_COVERS.has(inflightKey)) {
-      log(`[sing-engine] 🔁 复用进行中的同曲渲染任务: 《${resolvedTitle}》(${safeMode})`);
+      log(`[sing-engine] 🔁 复用进行中的同曲渲染任务: 《${resolvedTitle}》(${safeMode}/${spec.length})`);
       const shared = await INFLIGHT_COVERS.get(inflightKey);
       const dupOut = path.join(outDir, `cover-shared-${Date.now()}.wav`);
       if (shared?.file && fs.existsSync(shared.file)) {
         fs.copyFileSync(shared.file, dupOut);
-        return { ...shared, file: dupOut };
+        const dupSegs = shared.durationSec > 57.5 && shared.splitPointsSec?.length
+          ? await sliceWavBySplitPoints(dupOut, shared.splitPointsSec)
+          : [dupOut];
+        return { ...shared, file: dupOut, segments: dupSegs };
       }
-      const hitAfter = findCachedSong({ song: resolvedTitle, mode: safeMode });
+      const hitAfter = findCachedSong({ song: resolvedTitle, mode: safeMode, length: spec.length });
       if (hitAfter) {
         fs.copyFileSync(hitAfter.file, dupOut);
-        return { ...shared, file: dupOut };
+        const dupSegs = hitAfter.durationSec > 57.5 && hitAfter.splitPointsSec?.length
+          ? await sliceWavBySplitPoints(dupOut, hitAfter.splitPointsSec)
+          : [dupOut];
+        return { ...shared, file: dupOut, segments: dupSegs };
       }
       return shared;
     }
@@ -951,8 +1414,15 @@ export async function coverSong({
         throw new Error('请提供歌名(song)、音频文件(file)或音频链接(url)');
       }
 
-      // 阶段 A：宽裕粗切（约 62s），待 Demucs 分出纯净人声轨后再精准按完整乐句锁边裁剪
-      const win = await locateSongWindow(sourcePath, { start, seconds: Math.min(45, Number(seconds) || 42), coarse: true, log });
+      // 阶段 A：按档位宽裕粗切（浅唱 78s / 半首 138s / 整首 260s / 续唱 155s），待 Demucs 分出纯净人声轨后再按完整乐段锁边裁剪
+      const win = await locateSongWindow(sourcePath, {
+        start,
+        continueFromSec: isContinue ? Number(continueFromSec) : null,
+        length: spec.length,
+        seconds,
+        coarse: true,
+        log,
+      });
       const clipWav = path.join(workDir, 'clip.wav');
       await ff([
         '-ss', String(win.start.toFixed(2)),
@@ -960,7 +1430,7 @@ export async function coverSong({
         '-t', String(win.duration.toFixed(2)),
         '-ar', '44100', '-ac', '2',
         clipWav,
-      ]);
+      ], 120000);
 
       const outFile = path.join(outDir, `cover-${Date.now()}.wav`);
       const res = await runHumanizedVocalPipeline({
@@ -971,25 +1441,48 @@ export async function coverSong({
         level,
         songTitle: resolvedTitle,
         isOriginal: false,
-        framing,
+        framing: wantsFraming,
         exactPhraseTrim: Boolean(win.exactTrim),
-        targetSongSec: Math.min(43, Number(seconds) || 41),
+        lengthSpec: win.spec || spec,
+        clipOriginSec: win.start,
+        targetSongSec: (win.spec || spec).targetDur,
         introText: intro,
         outroText: outro,
         pitchOverride: pitchChange,
         log,
       });
-      if (resolvedTitle && useCache && framing) {
+      const totalDurSec = Number((win.totalDur || 0).toFixed(1));
+      const hasMoreAfter = totalDurSec > 0 && (totalDurSec - res.songEndSec) >= 16;
+      const resolvedBvid = matchedInfo?.bvid || bvid || '';
+      if (resolvedTitle && useCache && !isContinue && !wantsFraming) {
         saveSongToCache({
           song: resolvedTitle,
           artist,
+          bvid: resolvedBvid,
           mode: safeMode,
+          length: spec.length,
           wavFile: outFile,
           durationSec: res.durationSec,
           pitchChange: res.pitchChange,
+          bgmPitchChange: res.bgmPitchChange,
+          songStartSec: res.songStartSec,
+          songEndSec: res.songEndSec,
+          totalDurSec,
+          hasMoreAfter,
+          splitPointsSec: res.splitPointsSec,
+          stanzaReason: res.stanzaReason,
         });
       }
-      return { ...res, song: resolvedTitle, artist, matched: matchedInfo, cached: false };
+      return {
+        ...res,
+        song: resolvedTitle,
+        artist,
+        bvid: resolvedBvid,
+        totalDurSec,
+        hasMoreAfter,
+        matched: matchedInfo,
+        cached: false,
+      };
     } finally {
       try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
     }
@@ -1011,10 +1504,10 @@ export async function coverSong({
 export async function makeOriginalSong({
   lyrics,
   tags = 'chinese pop, cute sweet female vocal, light and fresh, acoustic guitar and ukulele, gentle, warm, 92bpm',
-  duration = 42,
+  duration = 46,
   mode = 'bedroom_bgm',
   level = 'natural',
-  framing = true,
+  framing = false,
   intro,
   outro,
   outDir = '/opt/qq-bridge/audio/tts',
@@ -1026,8 +1519,8 @@ export async function makeOriginalSong({
   fs.mkdirSync(outDir, { recursive: true });
   const workDir = fs.mkdtempSync(path.join(CONFIG.workRoot, 'orig-'));
   try {
-    // 压在 46s 以内，保证加上口白后单条 60s 内完美装下
-    const genDur = Math.min(46, Math.max(22, Number(duration) || 42));
+    // 无固定口白时可放宽至 54s，单条 QQ 语音完美装下
+    const genDur = Math.min(54, Math.max(22, Number(duration) || 46));
     log(`[sing-engine] ACE-Step 原创编曲生成 (${genDur}s)…`);
     const gen = await runReplicateModel('lucataco/ace-step', {
       lyrics: cleanLyrics,
@@ -1084,11 +1577,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         file: flags.file || '',
         url: flags.url || '',
         mode: flags.mode || 'bedroom_bgm',
+        length: flags.length || 'half',
+        continueFromSec: flags['continue-from'] !== undefined ? Number(flags['continue-from']) : null,
         level: flags.level || 'natural',
         start: flags.start !== undefined ? Number(flags.start) : null,
-        seconds: flags.seconds !== undefined ? Number(flags.seconds) : 45,
+        seconds: flags.seconds !== undefined ? Number(flags.seconds) : null,
         pitchChange: flags.pitch !== undefined ? Number(flags.pitch) : null,
-        framing: flags.framing !== 'false',
+        framing: flags.framing === 'true',
         useCache: flags.noCache !== 'true',
         outDir: flags.outDir || os.tmpdir(),
       });
@@ -1097,15 +1592,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const out = await makeOriginalSong({
         lyrics: flags.lyrics || '[verse]\n晚风轻轻吹过窗台\n星星落进奶茶杯里\n[chorus]\n今天也要开开心心\n明天继续一起发呆',
         tags: flags.tags,
-        duration: flags.duration ? Number(flags.duration) : 38,
+        duration: flags.duration ? Number(flags.duration) : 46,
         mode: flags.mode || 'bedroom_bgm',
         level: flags.level || 'natural',
-        framing: flags.framing !== 'false',
+        framing: flags.framing === 'true',
         outDir: flags.outDir || os.tmpdir(),
       });
       console.log(JSON.stringify(out, null, 2));
     } else {
-      console.error('用法: node humanized-sing-engine.mjs cover --song 红色高跟鞋 --artist 蔡健雅 [--mode acappella|bedroom_bgm|ktv] | original --lyrics "..."');
+      console.error('用法: node humanized-sing-engine.mjs cover --song 红色高跟鞋 --artist 蔡健雅 [--mode acappella|bedroom_bgm|ktv] [--length snippet|half|full|continue] | original --lyrics "..."');
       process.exit(2);
     }
   } catch (e) {

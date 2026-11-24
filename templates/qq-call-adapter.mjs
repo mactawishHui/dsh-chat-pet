@@ -798,17 +798,21 @@ class NativeQQCallDaemon {
             ? {
                 lyrics: '[verse]\n晚风轻轻吹过窗台\n和你电话里聊着天发呆\n[chorus]\n今天也要开开心心呀\n跑调了也不许笑我啦',
                 tags: 'chinese pop, cute sweet female vocal, light and fresh, acoustic guitar and ukulele, gentle, warm, 92bpm',
-                duration: 36,
+                duration: 46,
                 mode: task.mode || 'bedroom_bgm',
                 level: 'natural',
-                framing: true,
+                framing: false,
               }
             : {
                 song: task.song,
                 artist: task.artist || '',
+                bvid: task.bvid || '',
                 mode: task.mode || 'bedroom_bgm',
+                length: task.length || 'half',
+                continueFromSec: task.continueFromSec ?? null,
+                pitchChange: task.pitchChange !== undefined && task.pitchChange !== null ? Number(task.pitchChange) : null,
                 level: 'natural',
-                framing: true,
+                framing: false,
                 useCache: true,
               };
           const res = await fetch(endpoint, {
@@ -821,6 +825,9 @@ class NativeQQCallDaemon {
           if (!res.ok || !gen.ok || !gen.file) {
             const errMsg = String(gen?.error || `HTTP ${res.status}`).slice(0, 180);
             log(`[call-adapter] 唱歌接口返回失败 (${task.label}): ${errMsg}`);
+            if (/唱到最后一句|没有后面/.test(errMsg)) {
+              return errMsg;
+            }
             if (/未找到|搜不到|暂无|歌名|找不到/.test(errMsg)) {
               return `刚搜了一圈没找着${task.song ? `《${task.song}》` : '这首歌'}的原唱伴奏，要不换一首？`;
             }
@@ -833,26 +840,38 @@ class NativeQQCallDaemon {
               file: gen.file,
               cached: Boolean(gen.cached),
               durationSec: Number(gen.durationSec) || 0,
+              songEndSec: Number(gen.songEndSec) || 0,
+              totalDurSec: Number(gen.totalDurSec) || 0,
+              hasMoreAfter: Boolean(gen.hasMoreAfter),
+              pitchChange: Number.isFinite(gen.pitchChange) ? gen.pitchChange : null,
+              bvid: gen.bvid || '',
+              artist: gen.artist || '',
               label: task.label,
             };
           }
-          // 若渲染完成前电话已挂断 -> 仅把最新一次点歌转成 QQ 语音发到对方私聊（忽略已被覆盖的旧重复请求）
+          // 若渲染完成前电话已挂断 -> 仅把最新一次点歌转成 QQ 语音发到对方私聊（超 58s 自动按乐段无痕分条发出）
           if (task.seq && originEngine && task.seq !== originEngine._singSeq) {
             log(`[call-adapter] 电话已挂断，跳过已被覆盖的旧点歌 ${task.label} (seq=${task.seq}/${originEngine._singSeq})`);
             return '';
           }
           try {
             const token = readConsoleToken();
-            const sendRes = await fetch(`${cfg.bridgeBase}/api/send/voice`, {
-              method: 'POST',
-              headers: {
-                'content-type': 'application/json',
-                ...(token ? { 'X-Console-Token': token } : {}),
-              },
-              body: JSON.stringify({ target: `private:${targetUin}`, file: gen.file }),
-              signal: AbortSignal.timeout(30000),
-            });
-            log(`[call-adapter] 电话已挂断，已把刚录好的${task.label}转成 QQ 语音发给 ${targetUin} (ok=${sendRes.ok})`);
+            const segs = Array.isArray(gen.segments) && gen.segments.length ? gen.segments : [gen.file];
+            let allOk = true;
+            for (let si = 0; si < segs.length; si++) {
+              if (si > 0) await sleep(800);
+              const sendRes = await fetch(`${cfg.bridgeBase}/api/send/voice`, {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  ...(token ? { 'X-Console-Token': token } : {}),
+                },
+                body: JSON.stringify({ target: `private:${targetUin}`, file: segs[si] }),
+                signal: AbortSignal.timeout(30000),
+              });
+              if (!sendRes.ok) allOk = false;
+            }
+            log(`[call-adapter] 电话已挂断，已把刚录好的${task.label}转成 ${segs.length} 条 QQ 语音发给 ${targetUin} (ok=${allOk})`);
           } catch (err) {
             log(`[call-adapter] 挂断后转 QQ 语音失败: ${err?.message ?? err}`);
           }

@@ -19,34 +19,37 @@
 
 ```mermaid
 flowchart TD
-  A["用户点歌 (qq_cover)<br/>song + artist + mode"] --> B["B 站原唱精准检索<br/>(剔除音箱录屏/AMV/电影台词MV/大合唱)"]
-  B --> C["阶段 A：Paraformer 宽裕粗切 62s<br/>(首句前倒退 3.2s，绝不吞轻声开头字)"]
+  A["用户点歌 (qq_cover)<br/>song + artist + mode + length(snippet/half/full/continue)"] --> B["118 首精选直连目录 / B 站原唱严格避坑检索<br/>(剔除音箱录屏/AMV/电影台词MV/大合唱/DJ/琴谱)"]
+  B --> C["阶段 A：Paraformer 按篇幅宽裕粗切<br/>(浅唱 78s / 默认半首 138s / 整首 260s / 续唱自动跳过间奏)"]
   A2["用户让原创哼唱 (qq_sing)<br/>lyrics + tags + mode"] --> C2["Replicate ACE-Step<br/>生成全新旋律与人声"]
-  C --> D["Demucs htdemucs_ft 零漏音分轨<br/>立体声 vocals.wav + other.wav"]
+  C --> D["Demucs htdemucs_ft 无损 FLAC 分轨<br/>立体声 vocals + other（清唱跳过伴奏下载）"]
   C2 --> D
-  D --> D2["阶段 B：纯净人声轨 10ms 精准锁句 (find_window)<br/>跳过残句与电影对白 · HNR+F0跳变+立体声宽度避开多人喊麦<br/>终点严守 < 下句起点-0.16s，绝不漏唱下句两字"]
-  D2 --> E["Praat F0 基频测算<br/>172~440Hz 原调 0 / 低沉男声(<172Hz 且 p90×2≤620Hz)=+12<br/>(伴奏全程零变调无损)"]
+  D --> D2["阶段 B：纯净人声声学分析 + 纯人声 Paraformer + LLM 音乐段落锁边<br/>完整四句联/主歌+副歌收束（绝不停在四句第 3 句）· 严守下句前 ≥160ms<br/>自动输出超 57s 长曲的乐段静音缝多段切分点"]
+  D2 --> E["Praat F0 贴合说话声线智能定调（锚定 ~268Hz）<br/>女声(232~435Hz) 原调 0 / 流行男声(168~231Hz) +3~+6 半音 + rubberband 伴奏同步移调<br/>低沉男声(<168Hz) 精准升八度 +12（伴奏原调 0）"]
   E --> F["[Pre-RVC] vocal-humanizer.py<br/>Mid/Side 居中主唱提纯 + 100Hz去嗡鸣 + 句间漏音门限 + 5 层微瑕"]
-  F --> G["Replicate RVC v2 (rmvpe, protect=0.45, index=0.28)<br/>宠物专属声模换声 + 24h 过期自动 curl 续传"]
-  G --> H["[Post-RVC] vocal-humanizer.py<br/>防叠加柔换气 + 交替极性无嗡鸣空间 + 伴奏挖槽/侧链避让 + 自然气口衔接"]
-  T["同声纹 TTS 并行生成<br/>开场白 + 收尾碎碎念"] --> H
-  H --> I["24kHz 单声道 WAV (≤58.8s 单条 QQ 语音)<br/>入 LRU 秒唱曲库 + finally 自动销毁临时目录"]
+  F --> G["Replicate RVC v2 (rmvpe, protect=0.45, index=0.28)<br/>宠物专属声模换声 + curl 定向代理加速 + 24h 自动续期"]
+  G --> H["[Post-RVC] vocal-humanizer.py<br/>防叠加柔换气 + 交替极性无嗡鸣空间 + 伴奏挖槽/侧链避让 + 默认无套话直入开唱"]
+  H --> I["24kHz 连续 WAV（实时通话直播）+ 乐段无痕分段 WAV（QQ 多条语音）<br/>入 v5 LRU 60 首曲库（记录 songEndSec 支持“继续唱”）+ 自动销毁临时目录"]
 ```
 
 ---
 
 ## 3. 核心声学设计与实测踩坑总结
 
-### 3.1 两阶段「按完整乐句锁边」裁剪（根治半句开唱 & 漏下句两字）
-- **为什么不能直接拿混音版 Paraformer 时间戳一刀切？**
-  - 混音状态下轻声民谣（如《胡广生》）前 1~2 字极易被 ASR 漏识导致开唱缺字；结尾若盲目在上一句尾加固定缓冲秒数，会咬进下一句开头 1~2 字再突然断掉。
-- **两阶段精准锁句方案**：
-  1. **阶段 A（Demucs 前宽裕粗切）**：Paraformer 粗定位首句后**向前多留 3.2 秒**，切出 62 秒宽裕片段送进 `htdemucs_ft`；
-  2. **阶段 B（Demucs 后纯净人声轨 10ms 锁句 `--stage find_window`）**：直接在零伴奏的 `vocals.wav` 上检测真实乐句边界：
-     - 自动跳过粗切边缘 `<0.18s` 残句，以及后面紧跟 `≥4.5s` 超长空档的 MV 电影对白开场；
-     - 快歌超长连唱段（`>8.5s`）自动按局部能量谷底细分句界；
-     - 终点严格约束在 `next_phrase_start - 0.16s` 之前，**数学上彻底杜绝漏唱下一句半个字**；
-     - 同步评估每句的 **Praat 谐波清晰度 (HNR)**、**基频剧烈跳变率** 以及 **立体声 Side/Mid 宽度比**（独唱居中宽度低，多人大合唱/喊麦宽度暴涨），自动避开不适合单人 RVC 的多人重合唱与喊麦尾段！
+### 3.1 两阶段「音乐段落锁边（Stanza-Complete）」与四档篇幅/续唱（根治半句硬切 & 四句第 3 句腰斩 & 只唱二三十秒）
+- **为什么仅靠声学停顿还会停在四句段落的第 3 句？**
+  - 混音状态下轻声民谣前 1~2 字易漏识；即便分轨后只看纯能量静音缝，四句联的第 3 句尾也常有 0.7s 换气，容易被纯秒数惩罚误选为终点，让人听起来“没唱完就断了”。
+- **V5 两阶段段落锁边方案**：
+  1. **阶段 A（按篇幅宽裕粗切）**：支持四种篇幅 `length`：
+     - `snippet`（浅唱一段，~36–55s，单条 QQ 语音装下 1 个完整乐段）；
+     - `half`（**默认唱半首**，~65–118s，唱完完整主歌 + 导歌 + 第一遍完整副歌，在进间奏前收尾）；
+     - `full`（唱完整一首，~140–250s，覆盖全曲起止）；
+     - `continue`（**无缝续唱**：“继续唱/接着往后唱”时从上一首精确 `songEndSec` 往后扫描，自动跳过 15–30s 间奏直奔下一完整乐段！）。
+  2. **阶段 B（Demucs 纯净人声轨 10ms 声学边界 + 纯人声 Paraformer + LLM 音乐段落定剪）**：
+     - 先用 `vocal-humanizer.py --stage find_window` 在零伴奏 `vocals.wav` 上提取精确 10ms 乐句边界、逐句 HNR / F0 跳变率 / 立体声宽度（识别多人合唱混沌段）；
+     - 再对**零伴奏纯净 `vocals.wav`** 跑 Paraformer 获取高准确度歌词时间轴，交由轻量 LLM（`qwen-plus-latest`, `enable_thinking: false`, ~0.6s）结合语义、韵脚与停顿时长选定**完整四句联 / 完整主副歌**起止句号（绝不停在四句第 2/3 句），再映射回 10ms 精确声学边缘（严守 `trim_end <= next_phrase_start - 0.16s`，数学上绝不漏唱下句半个字）；
+     - 若总时长 `>57.5s`：实时语音通话直接播连续整段 WAV；QQ 聊天自动按**乐段/乐句静音缝**拆成多条 ≤55s 语音条（附 50ms 柔淡入淡出防爆音），**每条语音都起于完整句首、止于完整句尾，绝不字中硬切**！
+     - 若 ASR/LLM 不可用，自动回退声学降级算法（对 ≥2.2s 进间奏长停顿与 4 句/8 句偶数乐段结构高权重加分）。
 
 ### 3.2 立体声 Mid/Side 主唱提纯 + Pre-RVC 真人微瑕
 - **Mid/Side 维纳居中主唱提纯**：商业立体声混音中主唱严格居中（`M = (L+R)/2`），而大混响、宽声场和声/双人重唱及乐器漏音多分布在侧信号（`S = (L-R)/2`）。在 Pre-RVC 前先通过 STFT 软维纳掩码 `|M|² / (|M|² + 1.85|S|²)` 提纯干声，并配合 `100 Hz` 4 阶高通与 `-16 dB` 句间柔和门限，大幅消除多人合唱干扰与句间嗡鸣底噪。
@@ -57,17 +60,20 @@ flowchart TD
   4. 高音区轻微吃力（Top 18% 高音微扁 20~30 音分）；
   5. 1~2 处可控可爱小跑调 + 伴奏时长严格守恒的句内微松弛（1ms 不脱拍）。
 
-### 3.3 精确八度定调（常规 172~440Hz 原调 0 / 低沉男声 <172Hz 升 +12，伴奏零失真）
-- `vocal-humanizer.py --stage measure_f0` 用 `soundfile` + `parselmouth` 测量原唱干声基频中位数与 `p90` 高音区（规避 DashScope 流式 WAV 占位头导致 Praat 报 OOM 的坑）。
-- 原唱在 `172~440 Hz`（女声及高音男声）区间时直接 `pitch_change=0` 原调直出，防止高潮飙高音变尖锐花栗鼠；仅对真正低沉男声（`median < 172 Hz` 且 `p90 * 2 <= 620 Hz`）自动升一个精确八度（`+12`），既把人声抬进明亮少女音域，又让伴奏 `other.wav` **完全不需要做变调处理**。
+### 3.3 贴合说话声线的智能定调 + `rubberband` 伴奏同步移调（解决男声歌音调过低不像本人！）
+- 实测宠物平时说话 TTS 的基频黄金区在 **`~268 Hz`**（`p25=238 Hz`, `p75=313 Hz`）。旧版只支持 `{0, +12}` 二选一，导致大量 `168–231 Hz` 的流行男声（如周杰伦、许嵩、校园民谣等）被迫原调 `0` 演唱，发声落到低沉女中低音区，与平时明快少女说话声线差距偏大。
+- **V5 连续半音 KTV 女声升调策略（`vocal-humanizer.py --stage measure_f0 --mode <mode>`）**：
+  - **女声/女中音 (`232~435 Hz`)**：`vocal_shift = 0, bgm_shift = 0`（原调直出，零变调）；
+  - **低沉男中低音 (`<168 Hz` 且 `p90 × 2 <= 575 Hz`)**：`vocal_shift = +12, bgm_shift = 0`（精准升一个八度，伴奏原调零失真）；
+  - **流行男声/男高音 (`168~231 Hz`)**：按 `round(12 × log2(272 / med))` 计算目标半音（带伴奏封顶 `+6`，清唱最高 `+8`，并严守高音上限 `p90 × 2^(s/12) <= 525 Hz` 防尖锐），将人声精准抬回她 **~268 Hz 平时说话黄金音区**；同时用专业级 **`ffmpeg rubberband`**（`formant=preserved:pitchq=quality:transients=crisp:channels=together`）对分离出的伴奏 `other.wav` 做 1:1 原速同步移调，和声零跑调、乐器零变味！
 - **防长任务 HTTP 300s 断连**：`qq-tts` 的 `/cover` 与 `/song` 采用 `streamLongJson`——立即响应 `200` 头 + 每 15 秒发送 1 字节合法 JSON 空白心跳（`res.write(' ')`），彻底免疫 Node.js `undici` 默认 300s `headersTimeout`（`fetch failed`），实测 Replicate 冷启动排队超 7 分钟仍稳定交付。
 
-### 3.4 零嗡鸣生活化声学 + 人声侧链避让 + 自然口白气口衔接
+### 3.4 零嗡鸣生活化声学 + 人声侧链避让 + 默认无套话直入开唱
 - **彻底消灭低中频“嗡嗡声”**：
   - 人声总线：`110 Hz` 高通 + `280 Hz` (`-2.5 dB`) 去浑浊凹槽 + `2.8 kHz` (`+1.8 dB`) 清晰临场；房间早反射先过 **`380 Hz` 高通**并采用**正负极性交替质数延迟抽头**，彻底消灭同相梳状滤波产生的盒子嗡鸣。
   - 伴奏总线：`bedroom_bgm` 切掉 `220 Hz` 以下轰鸣，精准在 `350 Hz (-3.5 dB)` 与 `2.4 kHz (-3.0 dB)` 挖出人声频段凹槽；用**分帧 `P75` 响度**对齐电平（防止安静前奏拉爆副歌音量），默认 `bedroom_bgm = -12.8 dB` / `ktv = -9.2 dB`，并叠加 **`-2.5 dB` 柔和人声侧链避让**（唱歌时伴奏轻柔退让、句间停顿自然回升）。
-- **防叠加柔换气**：最多 5 次/曲、仅在 `≥0.36s` 真实停顿且原声无自带呼吸处混入 `-25.8 dB` 暖气声。
-- **自然气口衔接**：开场白后留 `0.36~0.48s` 呼吸气口 + 伴奏 `0.55s` 柔和淡入，完整唱完最后一句后伴奏 `0.90s` 自然淡出 + `0.38~0.45s` 气口再接收尾吐槽，与《红色高跟鞋》同等丝滑；总长超 `58.8s` 自动省略收尾口白，保证单条 60s QQ 语音完整不截断。
+- **防叠加柔换气**：上限随歌曲时长线性扩展（每 ~9.5s 最多 1 次）、仅在 `≥0.36s` 真实停顿且原声无自带呼吸处混入 `-25.8 dB` 暖气声。
+- **默认零套话直入开唱（`framing: false`）**：取消每次固定硬塞的“我找下伴奏/凑合听吧”口白模板——无论 QQ 语音还是实时电话都直接以 `0.55s` 柔和伴奏淡入（清唱留 `0.10s` 自然气口）直接开唱，尾段伴奏 `0.90s` 柔淡出 + `0.18s` 柔收尾，彻底告别复读机感（仅当显式传入自定义 `intro`/`outro` 时才按需拼入口白）。
 
 ### 3.5 工程稳定性、选源避坑与零磁盘膨胀
 - **精选金曲直连目录 + B 站原唱精准避坑**：优先命中预筛 118 首纯净原唱目录 [`curated-songs-catalog.json`](./curated-songs-catalog.json)（已验 BVID 直连零误搜，未命中自动回退实时检索）；实时检索自动屏蔽“录音棚大声听/专业录音棚试听/百万豪装/音响试听”（外放录屏大混响）、AMV 混剪、DJ/琴谱/光遇/KTV/MTV、左右耳、毕业歌会、多人大合唱与翻唱，并在同等条件下优先纯无损音频源而非夹带电影台词的影视 MV。
@@ -91,13 +97,13 @@ python3.11 -m venv /opt/qq-cover/venv
 ### 4.2 HTTP 接口（`qq-tts` 本地服务 `:3210`）
 | 端点 | 参数 | 说明 |
 | --- | --- | --- |
-| `POST /cover` | `{ song, artist?, mode?, level?, file?, url?, start?, seconds?, intro?, outro? }` | 点歌翻唱已有歌曲（或翻唱外部音频），返回 `24kHz` 单声道 WAV |
-| `POST /song` | `{ lyrics, tags?, duration?, mode?, level?, intro?, outro? }` | 原创写词谱曲并经同一套活人引擎渲染 |
+| `POST /cover` | `{ song, artist?, bvid?, mode?, length?, continueFromSec?, level?, file?, url?, start?, seconds?, framing?, intro?, outro? }` | 点歌翻唱（`length`: `snippet`/`half`(默认)/`full`/`continue`；默认 `framing=false` 纯唱无套话），返回连续 `file` 与乐段切分 `segments` + `songEndSec` |
+| `POST /song` | `{ lyrics, tags?, duration?, mode?, level?, framing?, intro?, outro? }` | 原创写词谱曲并经同一套活人引擎渲染（默认 `framing=false`） |
 
 ### 4.3 QQ 聊天 Agent 工具（`mcp-snowluma-safe.js`）
-- `qq_cover`：支持按 `song` / `artist` 点歌翻唱任意曲目，或翻唱用户发来的音频；可选 `mode`（`acappella` / `bedroom_bgm` / `ktv`）与 `level`（`subtle` / `natural` / `casual` / `offkey`）。
+- `qq_cover`：支持按 `song` / `artist` 点歌翻唱任意曲目，可选 `mode`（`acappella` / `bedroom_bgm` / `ktv`）、`length`（`half` 默认唱完整前半首 / `snippet` 浅唱一小段 / `full` 唱完整一首 / `continue` 接着刚才那首继续往后唱）与 `level`；默认直接开唱无重复口白，超 57s 自动按乐段无痕分多条 QQ 语音发送。
 - `qq_sing`：支持即兴写词原创哼唱，同样可选 `mode` / `level` / `intro` / `outro`。
-- 两个工具均为**后台异步执行 + 立即返回回执**，渲染完毕后由 `qq-bridge` 直接发出真实 QQ 语音，并自动写入每日活动与晚安日记流水。
+- 两个工具均为**后台异步执行 + 立即返回回执**，渲染完毕后由 `qq-bridge` 直接发出真实 QQ 语音，记录 `lastSong`（含 `songEndSec` 供“继续唱”续唱），并自动写入每日活动与晚安日记流水。
 
 ### 4.4 实时语音通话内异步点歌 + 曲库秒唱缓存 + 唱歌状态机防幻觉（零阻塞）
 - **LRU 曲库秒唱缓存 + 开场曲库注入**：[`templates/humanized-sing-engine.mjs`](./templates/humanized-sing-engine.mjs) 自动将每首已唱过的歌曲缓存至 `/opt/qq-bridge/audio/song-cache/`（LRU 上限默认 60 首 ≈ 150 MB，可通过 `SING_CACHE_MAX` 调整，QQ 聊天与实时语音通话共享）；通话建连时 [`templates/call-engine.mjs`](./templates/call-engine.mjs) 自动扫描曲库并注入首轮上下文，让小鲸鲸明确区分“曲库里 0 秒秒唱的熟歌”与“需要现找伴奏等 2~3 分钟的新歌”。

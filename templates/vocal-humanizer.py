@@ -318,28 +318,47 @@ def find_phrase_locked_window(vocal, sr, min_dur=22.0, target_dur=40.0, max_dur=
             lead_pad = max(0.05, ps0 - (prev_end + 0.18))
     trim_start = max(0.0, ps0 - lead_pad)
 
-    # 2) 终点：枚举完整乐句结尾，综合打分（大停顿加分 + 贴近目标时长 + 强力避开多人合唱/喊麦混沌尾段）
+    # 2) 终点：枚举完整乐句结尾，综合打分（段落级长停顿强加分 + 四句/偶数乐段结构加分 + 贴近目标时长 + 避开多人合唱/喊麦混沌尾段）
     best_k = None
     best_score = -1e9
     for k in range(start_idx, len(phrases)):
         pe_k = phrases[k][1]
         next_start = phrases[k + 1][0] if k + 1 < len(phrases) else total_dur
         gap_after = max(0.0, next_start - pe_k)
-        tail_pad = min(1.05, max(0.16, gap_after * 0.55))
+        tail_pad = min(1.10, max(0.16, gap_after * 0.55))
         if k + 1 < len(phrases):
             max_safe_end = next_start - 0.16
             cand_end = min(pe_k + tail_pad, max_safe_end)
             if cand_end <= pe_k + 0.03:
                 continue
         else:
-            cand_end = min(total_dur, pe_k + 0.95)
+            cand_end = min(total_dur, pe_k + 1.05)
 
         dur_k = cand_end - trim_start
         if dur_k < min_dur or dur_k > max_dur:
             continue
 
-        gap_bonus = 44.0 if gap_after >= 0.70 else (28.0 if gap_after >= 0.40 else (14.0 if gap_after >= 0.22 else -10.0))
-        dur_penalty = abs(dur_k - target_dur) * 1.15
+        # 段落级大停顿（进间奏/换主副歌通常 >=1.3s~2.2s）远高于普通句间换气（0.4~0.8s），避免停在四句段落的第 3 句！
+        if k == len(phrases) - 1:
+            gap_bonus = 62.0
+        elif gap_after >= 2.20:
+            gap_bonus = 68.0
+        elif gap_after >= 1.35:
+            gap_bonus = 50.0
+        elif gap_after >= 0.75:
+            gap_bonus = 28.0
+        elif gap_after >= 0.40:
+            gap_bonus = 16.0
+        elif gap_after >= 0.22:
+            gap_bonus = 6.0
+        else:
+            gap_bonus = -14.0
+
+        # 华语流行/民谣经典 4 句/8 句乐段结构偏好（作为无歌词降级兜底时的结构锚）
+        kept_k = k - start_idx + 1
+        stanza_cadence_bonus = 18.0 if (kept_k >= 4 and kept_k % 4 == 0) else (7.0 if (kept_k >= 2 and kept_k % 2 == 0) else -6.0)
+        # 放缓时长惩罚斜率，宁可多唱 6~10 秒把完整 4 句乐段唱完，也不要为了卡死秒数在第 3 句腰斩！
+        dur_penalty = abs(dur_k - target_dur) * 0.65
 
         chaos_penalty = 0.0
         for idx_p in range(start_idx, k + 1):
@@ -349,7 +368,7 @@ def find_phrase_locked_window(vocal, sr, min_dur=22.0, target_dur=40.0, max_dur=
         next_is_chaos = (k + 1 < len(phrases)) and is_chaotic_phrase(k + 1)
         stop_before_chaos_bonus = 36.0 if next_is_chaos else 0.0
 
-        score = gap_bonus + stop_before_chaos_bonus - dur_penalty - chaos_penalty
+        score = gap_bonus + stanza_cadence_bonus + stop_before_chaos_bonus - dur_penalty - chaos_penalty
         if score > best_score:
             best_score = score
             best_k = (k, cand_end, gap_after, float(np.mean(p_hnrs[start_idx:k + 1])))
@@ -358,7 +377,7 @@ def find_phrase_locked_window(vocal, sr, min_dur=22.0, target_dur=40.0, max_dur=
         for k in range(len(phrases) - 1, start_idx - 1, -1):
             pe_k = phrases[k][1]
             next_start = phrases[k + 1][0] if k + 1 < len(phrases) else total_dur
-            cand_end = min(pe_k + 0.50, next_start - 0.14) if k + 1 < len(phrases) else min(total_dur, pe_k + 0.85)
+            cand_end = min(pe_k + 0.50, next_start - 0.14) if k + 1 < len(phrases) else min(total_dur, pe_k + 0.95)
             if cand_end - trim_start <= max_dur and cand_end > trim_start + 12.0:
                 best_k = (k, cand_end, max(0.0, next_start - pe_k), float(np.mean(p_hnrs[start_idx:k + 1])))
                 break
@@ -366,18 +385,37 @@ def find_phrase_locked_window(vocal, sr, min_dur=22.0, target_dur=40.0, max_dur=
     if best_k is None:
         trim_end = min(total_dur, trim_start + max_dur)
         avg_h = float(np.mean(p_hnrs)) if p_hnrs else 10.0
+        end_idx = len(phrases) - 1
         kept = len(phrases)
     else:
-        k_idx, trim_end, _, avg_h = best_k
-        kept = k_idx - start_idx + 1
+        end_idx, trim_end, _, avg_h = best_k
+        kept = end_idx - start_idx + 1
+
+    phrases_detail = []
+    for idx_p, (ps_t, pe_t) in enumerate(phrases):
+        nxt = phrases[idx_p + 1][0] if idx_p + 1 < len(phrases) else total_dur
+        phrases_detail.append({
+            'idx': idx_p,
+            'start': round(float(ps_t), 3),
+            'end': round(float(pe_t), 3),
+            'dur': round(float(pe_t - ps_t), 3),
+            'gap_after': round(float(max(0.0, nxt - pe_t)), 3),
+            'hnr': round(float(p_hnrs[idx_p]), 1),
+            'side_ratio': round(float(p_sides[idx_p]), 3),
+            'chaotic': bool(is_chaotic_phrase(idx_p)),
+        })
 
     return {
         'start': round(float(trim_start), 3),
         'end': round(float(trim_end), 3),
         'dur': round(float(trim_end - trim_start), 3),
+        'start_idx': int(start_idx),
+        'end_idx': int(end_idx),
         'phrases': int(kept),
         'total_phrases': len(phrases),
         'avg_hnr': round(avg_h, 1),
+        'total_dur': round(float(total_dur), 3),
+        'phrases_detail': phrases_detail,
     }
 
 
@@ -582,10 +620,11 @@ def inject_breaths_and_air(y, sr, phrases, high_mask, preset, real_breaths, rng)
         if s1 > s0 and c1 > c0:
             arr[s0:s1] += clip[c0:c1] * gain
 
-    # 1) 乐句前真实吸气声（只在真正停顿 ≥0.36s 且全曲不超过 5 次轻柔出现，绝不密集刷屏）
+    # 1) 乐句前真实吸气声（只在真正停顿 ≥0.36s 处轻柔出现，上限随歌曲时长线性扩展，绝不密集刷屏）
+    max_breaths = max(5, min(22, int(round((len(y) / float(sr)) / 9.5))))
     breath_placed = 0
     for idx, (ps, pe) in enumerate(phrases):
-        if breath_placed >= 5:
+        if breath_placed >= max_breaths:
             break
         prev_end = phrases[idx - 1][1] if idx > 0 else 0.0
         gap = ps - prev_end
@@ -814,24 +853,55 @@ def main():
         vals = pitch.selected_array['frequency']
         vals = vals[vals > 0]
         if len(vals) < 10:
-            res = {'median_hz': 0.0, 'p25_hz': 0.0, 'p75_hz': 0.0, 'p90_hz': 0.0, 'suggested_pitch_shift': 0}
+            res = {
+                'median_hz': 0.0,
+                'p25_hz': 0.0,
+                'p75_hz': 0.0,
+                'p90_hz': 0.0,
+                'suggested_pitch_shift': 0,
+                'bgm_pitch_shift': 0,
+                'target_med_hz': 272.0,
+            }
         else:
             med = float(np.median(vals))
+            p25 = float(np.percentile(vals, 25))
+            p75 = float(np.percentile(vals, 75))
             p90 = float(np.percentile(vals, 90))
-            # 仅对真正低沉男声 (<172Hz 且高音区翻倍后 <=620Hz) 升八度 (+12) 以保持伴奏原调无损；
-            # 高男声/女中低音 (172~440Hz) 直接原调 0，避免副歌飙高音变尖锐花栗鼠！
-            if med < 172.0 and p90 * 2.0 <= 620.0:
-                shift = 12
-            elif med > 450.0:
-                shift = -12
+            # 实测说话基频 med=268Hz，唱女声流行曲的黄金听感区在 med≈290~325Hz（如《红色高跟鞋》295Hz、《胡广生》299Hz、《海底》316Hz）；
+            # 男声流行歌（如周杰伦《晴天》med=241/p25=190/p90=335Hz）虽然副歌拉高了中位数，但主歌低音区 p25<212Hz 依然偏沉偏男！
+            target_sing_med = 298.0
+            is_female_range = (med >= 256.0 and med <= 435.0) or (med >= 232.0 and p25 >= 212.0 and med <= 435.0)
+            # 1) 自然女声区（明亮女声或低音稳定在女声区的女中音）：原调直出，零变调！
+            if is_female_range:
+                v_shift, b_shift = 0, 0
+            # 2) 极高尖女声/童声 (>435Hz)：降八度
+            elif med > 435.0:
+                v_shift, b_shift = -12, 0
+            # 3) 低沉男中低音 (<168Hz 且翻倍后高音 <=575Hz)：精准升八度 +12，伴奏原调 0 零失真！
+            elif med < 168.0 and p90 * 2.0 <= 575.0:
+                v_shift, b_shift = 12, 0
+            # 4) 流行男声/男高音（含周杰伦/许嵩/校园民谣等 med<256Hz 且低音落入男声胸声区 p25<212Hz）：
+            #    连续半音 KTV 女声升调（+3~+6 半音，清唱最高 +8），把人声抬回 298Hz 明亮少女演唱黄金区，
+            #    同时用 rubberband 把伴奏同步移调保持和声 100% 精准锁死！
             else:
-                shift = 0
+                raw_s = int(round(12.0 * math.log2(target_sing_med / max(75.0, med))))
+                if raw_s >= 9 and p90 * 2.0 <= 585.0:
+                    v_shift, b_shift = 12, 0
+                else:
+                    max_s = 8 if args.mode == 'acappella' else 6
+                    s = max(3, min(max_s, raw_s))
+                    while s > 3 and p90 * (2.0 ** (s / 12.0)) > 520.0:
+                        s -= 1
+                    v_shift = s
+                    b_shift = 0 if args.mode == 'acappella' else s
             res = {
                 'median_hz': round(med, 1),
-                'p25_hz': round(float(np.percentile(vals, 25)), 1),
-                'p75_hz': round(float(np.percentile(vals, 75)), 1),
+                'p25_hz': round(p25, 1),
+                'p75_hz': round(p75, 1),
                 'p90_hz': round(p90, 1),
-                'suggested_pitch_shift': shift,
+                'suggested_pitch_shift': int(v_shift),
+                'bgm_pitch_shift': int(b_shift),
+                'target_med_hz': target_sing_med,
             }
         print(json.dumps(res, ensure_ascii=False))
         return
@@ -896,9 +966,16 @@ def main():
             inst_scaled[-fade_out:] *= np.linspace(1.0, 0.0, fade_out)
         body = body + inst_scaled
 
-    # 5. 同声纹开场白与收尾碎碎念无缝自然衔接（留足真人呼吸气口，告别生硬秒切）
+    # 5. 同声纹开场白与收尾碎碎念无缝自然衔接（默认无口白直入开唱；若显式传入则留足真人呼吸气口）
+    has_intro = bool(args.intro and os.path.exists(args.intro))
+    has_outro = bool(args.outro and os.path.exists(args.outro))
+    # 无口白直唱时给结尾留 0.18s 柔淡出，杜绝清唱/伴奏最后瞬间硬切喀哒声
+    tail_fade = min(int(0.18 * sr), len(body) // 8)
+    if tail_fade > 10:
+        body[-tail_fade:] *= np.linspace(1.0, 0.0, tail_fade)
+
     segments = []
-    if args.intro and os.path.exists(args.intro):
+    if has_intro:
         intro_raw, _ = load_mono(args.intro, sr)
         intro_proc = apply_phone_mic_and_room(intro_raw, sr, room_style=room_style)
         intro_rms = calc_rms(intro_proc[np.abs(intro_proc) > 0.01]) if np.any(np.abs(intro_proc) > 0.01) else calc_rms(intro_proc)
@@ -906,10 +983,12 @@ def main():
         segments.append(intro_proc)
         gap_intro = 0.48 if args.mode == 'acappella' else 0.36
         segments.append(np.zeros(int(gap_intro * sr), dtype=np.float64))
+    else:
+        segments.append(np.zeros(int(0.10 * sr), dtype=np.float64))
 
     segments.append(body)
 
-    if args.outro and os.path.exists(args.outro):
+    if has_outro:
         outro_raw, _ = load_mono(args.outro, sr)
         outro_proc = apply_phone_mic_and_room(outro_raw, sr, room_style=room_style)
         outro_rms = calc_rms(outro_proc[np.abs(outro_proc) > 0.01]) if np.any(np.abs(outro_proc) > 0.01) else calc_rms(outro_proc)
@@ -917,6 +996,8 @@ def main():
         gap_outro = 0.45 if args.mode == 'acappella' else 0.38
         segments.append(np.zeros(int(gap_outro * sr), dtype=np.float64))
         segments.append(outro_proc)
+    else:
+        segments.append(np.zeros(int(0.16 * sr), dtype=np.float64))
 
     final = np.concatenate(segments)
 

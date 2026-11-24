@@ -157,20 +157,85 @@ function syllableInitial(s) {
   return m ? m[1] : '';
 }
 
-function matchPhraseScore(qPlain, qRawLower, qTokens, qFuzzy, qChars, candRaw, { strictForLongUtterance = false } = {}) {
-  const cPlain = normalizePlain(candRaw);
-  if (!cPlain || cPlain.length < 2) return { score: 0, type: '' };
-  // 去掉模板占位符（如 "oo" / "xx"）太短的碎片
-  const cClean = cPlain.replace(/(?:oo|xx)/g, '');
-  if (cClean.length < 2) return { score: 0, type: '' };
-  if (SHORT_STOPWORDS.has(cClean)) return { score: 0, type: '' };
+const PHRASE_CACHE = new Map();
+const MAX_PHRASE_CACHE = 30000;
+
+function compileCandidatePhrase(candRaw) {
+  const key = String(candRaw || '');
+  const hit = PHRASE_CACHE.get(key);
+  if (hit !== undefined) return hit;
+
+  const cPlain = normalizePlain(key);
+  let compiled = null;
+  if (cPlain && cPlain.length >= 2) {
+    // 去掉模板占位符（如 "oo" / "xx"）太短的碎片
+    const cClean = cPlain.replace(/(?:oo|xx)/g, '');
+    if (cClean.length >= 2 && !SHORT_STOPWORDS.has(cClean)) {
+      const ascii = isAsciiWord(cClean);
+      let asciiRe = null;
+      if (ascii && cClean.length >= 3) {
+        const escaped = cClean.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+        asciiRe = new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, 'i');
+      }
+      let cTokens = [];
+      let cChars = [];
+      let cFuzzy = [];
+      let cFuzzyJoined = '';
+      let cFinals = [];
+      let cInitials = [];
+      if (!ascii) {
+        cTokens = textToPinyinTokens(cClean);
+        cChars = extractCharTokens(cClean);
+        cFuzzy = cTokens.map(fuzzyNormSyllable);
+        cFuzzyJoined = cFuzzy.join('');
+        cFinals = cFuzzy.map(syllableFinal);
+        cInitials = cFuzzy.map(syllableInitial);
+      }
+      compiled = {
+        cPlain,
+        cClean,
+        ascii,
+        asciiRe,
+        cTokens,
+        cChars,
+        L: cTokens.length,
+        cFuzzy,
+        cFuzzyJoined,
+        cFinals,
+        cInitials,
+      };
+    }
+  }
+  if (PHRASE_CACHE.size >= MAX_PHRASE_CACHE) PHRASE_CACHE.clear();
+  PHRASE_CACHE.set(key, compiled);
+  return compiled;
+}
+
+function compileQuery(queryText) {
+  const qRawLower = String(queryText || '').trim().toLowerCase();
+  const qPlain = normalizePlain(qRawLower);
+  if (!qPlain || qPlain.length < 2) return null;
+  const qTokens = textToPinyinTokens(qRawLower);
+  const qFuzzy = qTokens.map(fuzzyNormSyllable);
+  const qChars = extractCharTokens(qRawLower);
+  const qFinals = qFuzzy.map(syllableFinal);
+  const qInitials = qFuzzy.map(syllableInitial);
+  const qFuzzySet = new Set(qFuzzy);
+  const qFinalSet = new Set(qFinals);
+  return { qRawLower, qPlain, qTokens, qFuzzy, qChars, qFinals, qInitials, qFuzzySet, qFinalSet };
+}
+
+function matchPhraseScoreCompiled(q, c, { strictForLongUtterance = false } = {}) {
+  if (!c) return { score: 0, type: '' };
+  const { qPlain, qRawLower, qTokens, qFuzzy, qChars, qFinals, qInitials, qFuzzySet, qFinalSet } = q;
+  const { cPlain, cClean, ascii, asciiRe, cTokens, cChars, L, cFuzzy, cFuzzyJoined, cFinals, cInitials } = c;
 
   // 1. 精确文本命中
   if (qPlain === cPlain || qPlain === cClean) return { score: 100, type: 'exact' };
 
   // 2. 英文词边界精确命中（支持 "Man" / "Van" / "city" / "emo" 等 3+ 字母词）
-  if (isAsciiWord(cClean)) {
-    if (cClean.length >= 3 && hasAsciiWordBoundary(qRawLower, cClean)) {
+  if (ascii) {
+    if (asciiRe && asciiRe.test(qRawLower)) {
       return { score: 84, type: 'ascii_word' };
     }
     return { score: 0, type: '' };
@@ -185,15 +250,11 @@ function matchPhraseScore(qPlain, qRawLower, qTokens, qFuzzy, qChars, candRaw, {
   }
 
   // 4. 拼音音节匹配（同音空耳 & 近音滑窗模糊纠错）
-  const cTokens = textToPinyinTokens(cClean);
-  const cChars = extractCharTokens(cClean);
-  const L = cTokens.length;
   if (L < 2 || qTokens.length < L) return { score: 0, type: '' };
-  const cFuzzy = cTokens.map(fuzzyNormSyllable);
-  const cFuzzyJoined = cFuzzy.join('');
 
+  const canCheckParticles = strictForLongUtterance && qChars.length === qTokens.length && cChars.length === L;
   const edgeIsUnmatchedParticle = (startIdx) => {
-    if (!strictForLongUtterance || qChars.length !== qTokens.length || cChars.length !== L) return false;
+    if (!canCheckParticles) return false;
     const firstQ = qChars[startIdx];
     const lastQ = qChars[startIdx + L - 1];
     if (MODAL_PARTICLES.has(firstQ) && firstQ !== cChars[0]) return true;
@@ -202,46 +263,66 @@ function matchPhraseScore(qPlain, qRawLower, qTokens, qFuzzy, qChars, candRaw, {
   };
 
   // 4a. 完整拼音序列滑窗 100% 命中（如 哈吉米==哈基米，窝腰烟牌==我要验牌，太酷啦==泰酷辣）
-  if (L >= 3 || qTokens.length <= 10 || !strictForLongUtterance) {
-    for (let i = 0; i <= qTokens.length - L; i++) {
-      let exactAll = true;
+  const qLen = qTokens.length;
+  if ((L >= 3 || qLen <= 10 || !strictForLongUtterance) && qFuzzySet.has(cFuzzy[0])) {
+    const maxI = qLen - L;
+    const cFuzzy0 = cFuzzy[0];
+    const allowFuzzyHere = L >= 3 || !strictForLongUtterance || qLen <= 7;
+    for (let i = 0; i <= maxI; i++) {
+      if (qFuzzy[i] !== cFuzzy0) continue;
+      let exactAll = qTokens[i] === cTokens[0];
       let fuzzyAll = true;
-      for (let k = 0; k < L; k++) {
-        if (qTokens[i + k] !== cTokens[k]) exactAll = false;
+      for (let k = 1; k < L; k++) {
         if (qFuzzy[i + k] !== cFuzzy[k]) { fuzzyAll = false; break; }
+        if (exactAll && qTokens[i + k] !== cTokens[k]) exactAll = false;
       }
+      if (!fuzzyAll) continue;
       if (exactAll) return { score: L >= 3 ? 86 : 78, type: 'pinyin' };
-      if (fuzzyAll && !edgeIsUnmatchedParticle(i) && (L >= 3 || !strictForLongUtterance || qTokens.length <= 7)) {
+      if (allowFuzzyHere && !edgeIsUnmatchedParticle(i)) {
         return { score: L >= 3 ? 80 : 72, type: 'fuzzy_pinyin' };
       }
     }
   }
 
   // 4b. 近音编辑距离滑窗（如 尊都假都->尊嘟假嘟、德学->哲学；严格要求声/韵母重叠+语气助词防护）
-  const allowEdit = L >= 3 || (!strictForLongUtterance && L === 2) || (L === 2 && qTokens.length <= 8);
-  if (allowEdit && cFuzzyJoined.length >= 4) {
+  const allowEdit = L >= 3 || (!strictForLongUtterance && L === 2) || (L === 2 && qLen <= 8);
+  const cJoinedLen = cFuzzyJoined.length;
+  if (allowEdit && cJoinedLen >= 4) {
+    const halfFinals = L === 2 ? 2 : Math.floor(L * 0.5);
+    // 快速预筛：整个 query 中连最低所需韵母数都不具备时，数学上不可能命中，直接跳过滑窗
+    let globalFinalHits = 0;
+    for (let k = 0; k < L; k++) {
+      if (qFinalSet.has(cFinals[k])) globalFinalHits++;
+    }
+    if (globalFinalHits < halfFinals) return { score: 0, type: '' };
+
     let bestSim = 0;
-    for (let i = 0; i <= qFuzzy.length - L; i++) {
-      if (edgeIsUnmatchedParticle(i)) continue;
-      let finalMatches = 0;
-      let initMatches = 0;
-      let winStr = '';
-      for (let k = 0; k < L; k++) {
-        winStr += qFuzzy[i + k];
-        if (syllableFinal(qFuzzy[i + k]) === syllableFinal(cFuzzy[k])) finalMatches++;
-        if (syllableInitial(qFuzzy[i + k]) === syllableInitial(cFuzzy[k])) initMatches++;
+    const maxI = qFuzzy.length - L;
+    const needFinals = L === 2 ? 2 : Math.ceil(L * 0.6);
+    for (let i = 0; i <= maxI; i++) {
+      if (L === 2) {
+        if (qFinals[i] !== cFinals[0] || qFinals[i + 1] !== cFinals[1]) continue;
+        if (edgeIsUnmatchedParticle(i)) continue;
+      } else {
+        let finalMatches = 0;
+        let initMatches = 0;
+        for (let k = 0; k < L; k++) {
+          if (qFinals[i + k] === cFinals[k]) finalMatches++;
+          if (qInitials[i + k] === cInitials[k]) initMatches++;
+        }
+        const phoneticOk = finalMatches >= needFinals || (initMatches === L && finalMatches >= halfFinals);
+        if (!phoneticOk || edgeIsUnmatchedParticle(i)) continue;
       }
-      // 2 字词要求 2/2 韵母全一致（de xue vs ze xue）；3+ 字词允许韵母或声母高一致（如 尊都假都 vs 尊嘟假嘟 4/4 声母一致）
-      const phoneticOk = L === 2
-        ? (finalMatches === 2)
-        : (finalMatches >= Math.ceil(L * 0.6) || (initMatches === L && finalMatches >= Math.floor(L * 0.5)));
-      if (!phoneticOk) continue;
-      const maxLen = Math.max(winStr.length, cFuzzyJoined.length);
+      let winStr = '';
+      for (let k = 0; k < L; k++) winStr += qFuzzy[i + k];
+      const maxLen = Math.max(winStr.length, cJoinedLen);
+      // 长度差超过 20% 时编辑距离必然不满足 sim >= 0.80，快速剪枝
+      if (Math.abs(winStr.length - cJoinedLen) > maxLen * 0.20001) continue;
       const dist = levenshtein(winStr, cFuzzyJoined);
       const sim = 1 - dist / maxLen;
       if (sim > bestSim) bestSim = sim;
     }
-    const minSim = L === 2 ? 0.80 : 0.80;
+    const minSim = strictForLongUtterance && L >= 4 ? 0.82 : 0.80;
     if (bestSim >= minSim) {
       return { score: Math.round(52 + bestSim * 26), type: 'fuzzy_pinyin' };
     }
@@ -250,37 +331,53 @@ function matchPhraseScore(qPlain, qRawLower, qTokens, qFuzzy, qChars, candRaw, {
   return { score: 0, type: '' };
 }
 
-export function scoreMemeEntry(meme, queryText, { strictForLongUtterance = false } = {}) {
-  const qRawLower = String(queryText || '').trim().toLowerCase();
-  const qPlain = normalizePlain(qRawLower);
-  if (!qPlain || qPlain.length < 2) return { score: 0, matchType: '', matchedPhrase: '' };
-  const qTokens = textToPinyinTokens(qRawLower);
-  const qFuzzy = qTokens.map(fuzzyNormSyllable);
-  const qChars = extractCharTokens(qRawLower);
+const MEME_CAND_CACHE = new WeakMap();
+
+function getMemeCompiledCandidates(meme) {
+  const sig = `${meme.name || ''}|${meme.aliases?.length || 0}|${meme.replies?.length || 0}|${meme.searchKeywords?.length || 0}`;
+  const cached = MEME_CAND_CACHE.get(meme);
+  if (cached && cached.sig === sig) return cached.list;
+
+  const list = [];
+  const push = (phrase, weight) => {
+    if (!phrase) return;
+    const compiled = compileCandidatePhrase(phrase);
+    if (compiled) list.push({ phrase, weight, compiled, maxWeighted: Math.round(100 * weight) });
+  };
+
+  push(meme.name, 1.0);
+  if (meme.wikiTitle && meme.wikiTitle !== meme.name) push(meme.wikiTitle, 0.98);
+  for (const a of (Array.isArray(meme.aliases) ? meme.aliases : [])) push(a, 0.94);
+  for (const k of (Array.isArray(meme.searchKeywords) ? meme.searchKeywords : [])) {
+    if (String(k).length <= 14) push(k, 0.82);
+  }
+  for (const rep of (Array.isArray(meme.replies) ? meme.replies : [])) {
+    const cleanRep = String(rep || '').replace(/[（(][^）)]*[）)]/g, '').trim();
+    if (cleanRep.length >= 3 && cleanRep.length <= 12) push(cleanRep, 0.80);
+  }
+  MEME_CAND_CACHE.set(meme, { sig, list });
+  return list;
+}
+
+function scoreMemeEntryCompiled(meme, q, { strictForLongUtterance = false } = {}) {
+  if (!q) return { score: 0, matchType: '', matchedPhrase: '' };
+  const { qRawLower } = q;
 
   if (meme.id && String(meme.id).toLowerCase() === qRawLower) {
     return { score: 100, matchType: 'id', matchedPhrase: meme.id };
   }
 
   let best = { score: 0, matchType: '', matchedPhrase: '' };
-  const tryCand = (phrase, weight) => {
-    if (!phrase) return;
-    const r = matchPhraseScore(qPlain, qRawLower, qTokens, qFuzzy, qChars, phrase, { strictForLongUtterance });
-    const weighted = Math.round(r.score * weight);
+  const cands = getMemeCompiledCandidates(meme);
+  for (let i = 0; i < cands.length; i++) {
+    const item = cands[i];
+    if (best.score >= item.maxWeighted) continue;
+    const r = matchPhraseScoreCompiled(q, item.compiled, { strictForLongUtterance });
+    if (!r.score) continue;
+    const weighted = Math.round(r.score * item.weight);
     if (weighted > best.score) {
-      best = { score: weighted, matchType: r.type, matchedPhrase: phrase };
+      best = { score: weighted, matchType: r.type, matchedPhrase: item.phrase };
     }
-  };
-
-  tryCand(meme.name, 1.0);
-  if (meme.wikiTitle && meme.wikiTitle !== meme.name) tryCand(meme.wikiTitle, 0.98);
-  for (const a of (Array.isArray(meme.aliases) ? meme.aliases : [])) tryCand(a, 0.94);
-  for (const k of (Array.isArray(meme.searchKeywords) ? meme.searchKeywords : [])) {
-    if (String(k).length <= 14) tryCand(k, 0.82);
-  }
-  for (const rep of (Array.isArray(meme.replies) ? meme.replies : [])) {
-    const cleanRep = String(rep || '').replace(/[（(][^）)]*[）)]/g, '').trim();
-    if (cleanRep.length >= 3 && cleanRep.length <= 12) tryCand(cleanRep, 0.80);
   }
 
   // 非实时长句模式（如文字主动查梗）再兜底搜释义/来源文本
@@ -299,11 +396,18 @@ export function scoreMemeEntry(meme, queryText, { strictForLongUtterance = false
   return best;
 }
 
+export function scoreMemeEntry(meme, queryText, { strictForLongUtterance = false } = {}) {
+  const q = compileQuery(queryText);
+  return scoreMemeEntryCompiled(meme, q, { strictForLongUtterance });
+}
+
 export function matchMemesInKb(memes, queryText, { strictForLongUtterance = false, minScore = 1 } = {}) {
   if (!Array.isArray(memes) || !memes.length) return [];
+  const q = compileQuery(queryText);
+  if (!q) return [];
   const results = [];
   for (const meme of memes) {
-    const m = scoreMemeEntry(meme, queryText, { strictForLongUtterance });
+    const m = scoreMemeEntryCompiled(meme, q, { strictForLongUtterance });
     if (m.score >= minScore) results.push({ meme, ...m });
   }
   results.sort((a, b) => b.score - a.score);

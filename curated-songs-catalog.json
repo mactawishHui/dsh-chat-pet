@@ -1,0 +1,4071 @@
+{
+  "version": "1.0",
+  "updatedAt": "2026-11-23T19:41:15.850Z",
+  "totalSongs": 118,
+  "verifiedBvidCount": 118,
+  "categories": [
+    {
+      "category": "华语女声流行",
+      "count": 27
+    },
+    {
+      "category": "治愈民谣女声",
+      "count": 23
+    },
+    {
+      "category": "经典怀旧独唱",
+      "count": 1
+    },
+    {
+      "category": "燃系男声独唱",
+      "count": 1
+    },
+    {
+      "category": "热歌与影视OST",
+      "count": 20
+    },
+    {
+      "category": "国风与二次元",
+      "count": 14
+    },
+    {
+      "category": "清亮男声独唱",
+      "count": 26
+    },
+    {
+      "category": "热歌与独立轻抒情",
+      "count": 6
+    }
+  ],
+  "songs": [
+    {
+      "song": "红色高跟鞋",
+      "artist": "蔡健雅",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "chatMentioned": true,
+      "notes": "口碑标杆神曲，已入缓存(清唱/伴奏双版本)",
+      "bvid": "BV1ZL411M7T7",
+      "biliTitle": "【无损音质】蔡健雅《红色高跟鞋》4K画质「你像窝在被子里的舒服 却又像风捉摸不住」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 207,
+      "playCount": 2800217,
+      "sourceScore": 36.89,
+      "backupSources": [
+        {
+          "bvid": "BV1nw411w7pa",
+          "title": "【无损音质】《红色高跟鞋》- 蔡健雅“我爱你有种左灯右行的冲突  疯狂却怕没有退路~”",
+          "author": "遥远与晴music",
+          "dur": 207,
+          "score": 35.15
+        },
+        {
+          "bvid": "BV1j24y1T7EJ",
+          "title": "红色高跟鞋 - 蔡健雅【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 207,
+          "score": 34.15
+        }
+      ],
+      "qaStatus": "cached_existing",
+      "qaNote": "原有口碑标杆神曲，已 touch 保护（清唱 58.9s + 伴奏 58.6s）",
+      "qaScore": 9.8,
+      "qaMode": "acappella+bedroom_bgm",
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "胡广生",
+      "artist": "任素汐",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "chatMentioned": true,
+      "notes": "聊天记录点名想听（《无名之辈》插曲），轻声西南民谣极其契合活人感",
+      "bvid": "BV1FC4y1i7iK",
+      "biliTitle": "【Hi-Res无损】《胡广生》任素汐 - 一个乌的黑团团  高高哩哑哑哩  两个魂喘着粗气  烟尘四起",
+      "biliAuthor": "繁华落尽的恋曲e",
+      "durationSec": 215,
+      "playCount": 66373,
+      "sourceScore": 33.64,
+      "backupSources": [
+        {
+          "bvid": "BV1aK1pYTEu4",
+          "title": "任素汐-胡广生(我欠你啥子嘛)[4K60-16/44-中文字幕]",
+          "author": "4K无损音乐",
+          "dur": 193,
+          "score": 33.4
+        },
+        {
+          "bvid": "BV1QHsEz7EwC",
+          "title": "胡广生- 任素汐【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 215,
+          "score": 32.7
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S级）：开头「一个乌的黑团团」完整不吃字，结尾干净收在「你要的尊严我熟悉」，无嗡鸣混响，口白自然，极具方言叙事感",
+      "qaBatch": 1,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-f5f7ba3cce93",
+      "renderedDurSec": 34.4,
+      "pitchChange": 0,
+      "hnrDb": 16.8,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "像鱼",
+      "artist": "王贰浪",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "chatMentioned": true,
+      "notes": "聊天与电话点名曲，已入缓存(清唱/伴奏双版本)",
+      "bvid": "BV1ET4y1U7Aw",
+      "biliTitle": "【杜比音效】王贰浪《像鱼》4K「我要记住你的样子 像鱼记住水的拥抱」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 286,
+      "playCount": 1637872,
+      "sourceScore": 36.43,
+      "backupSources": [
+        {
+          "bvid": "BV1hhgezxEm6",
+          "title": "像鱼 - 王贰浪【Hi-Res无损音质】放下所有梦和烦恼",
+          "author": "知己音乐",
+          "dur": 286,
+          "score": 33.52
+        },
+        {
+          "bvid": "BV1kQceeFEdX",
+          "title": "王贰浪《像鱼》完整版",
+          "author": "醉一梦红尘",
+          "dur": 286,
+          "score": 32.95
+        }
+      ],
+      "qaStatus": "cached_existing",
+      "qaNote": "原有口碑低音男声升八度神曲，已 touch 保护（清唱 49.4s + 伴奏 51.4s）",
+      "qaScore": 9.6,
+      "qaMode": "acappella+bedroom_bgm",
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "海底",
+      "artist": "一支榴莲",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "chatMentioned": true,
+      "notes": "聊天点名曲，已入缓存",
+      "bvid": "BV1sK4y1x7ei",
+      "biliTitle": "《海底》 一支榴莲 原版 配唯美mv",
+      "biliAuthor": "落水视见",
+      "durationSec": 257,
+      "playCount": 8069749,
+      "sourceScore": 25.81,
+      "backupSources": [
+        {
+          "bvid": "BV13v42127pV",
+          "title": "凤凰传奇和一支榴莲同唱《海底》 究竟谁的嗓音更能打动你呢？",
+          "author": "了了音乐",
+          "dur": 179,
+          "score": 21.67
+        },
+        {
+          "bvid": "BV1xC4y1p7Fq",
+          "title": "【钢琴】 一支榴莲《海底》高度还原（Cuppix扒谱 x Midi Ranger）",
+          "author": "Cuppix_",
+          "dur": 249,
+          "score": 21.13
+        }
+      ],
+      "qaStatus": "cached_existing",
+      "qaNote": "原有缓存曲目，已 touch 保护（伴奏 41.4s）",
+      "qaScore": 9.5,
+      "qaMode": "bedroom_bgm",
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "东南苦行山",
+      "artist": "殷正洋",
+      "category": "经典怀旧独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "chatMentioned": true,
+      "notes": "聊天记录多次点名，经典台湾校园民歌独唱",
+      "bvid": "BV18VRDYBEZX",
+      "biliTitle": "无损版《东南苦行山》-中国台湾民歌",
+      "biliAuthor": "波兰不惊",
+      "durationSec": 239,
+      "playCount": 415444,
+      "sourceScore": 25.24,
+      "backupSources": [
+        {
+          "bvid": "BV1Y8411176G",
+          "title": "殷正洋-东南苦行山",
+          "author": "中原龙王",
+          "dur": 241,
+          "score": 19.77
+        },
+        {
+          "bvid": "BV11BBnBhE7o",
+          "title": "《东南苦行山》官方MV",
+          "author": "兮谈历史",
+          "dur": 237,
+          "score": 18.55
+        }
+      ],
+      "qaStatus": "rejected",
+      "qaNote": "避坑已剔除：原唱基频197.1Hz处于男声夹心带，首版pitch=0声线偏沉闷浑浊且带男声喉音颗粒感；重试--pitch 5后依然存在明显人声颗粒杂音与男女声混叠感，不满足V4.2自然音色标准，已执行远端删除清理",
+      "qaBatch": 2,
+      "qaScore": 6.2,
+      "qaMode": "bedroom_bgm",
+      "cacheId": null,
+      "renderedDurSec": 49.8,
+      "pitchChange": 5,
+      "hnrDb": 18.5,
+      "attempts": 2,
+      "replicateCalls": 4,
+      "qaAt": "2026-11-23T19:41:15.850Z"
+    },
+    {
+      "song": "超越极限",
+      "artist": "南征北战",
+      "category": "燃系男声独唱",
+      "mode": "acappella",
+      "vocalType": "male_high_orig",
+      "suitability": "B",
+      "chatMentioned": true,
+      "notes": "聊天点名，原曲含rap/摇滚偏燃，优先清唱或避开多人喊麦段",
+      "bvid": "BV1qW411r7rB",
+      "biliTitle": "南征北战NZBZ - 超越极限",
+      "biliAuthor": "复生浮三年",
+      "durationSec": 220,
+      "playCount": 57984,
+      "sourceScore": 21.53,
+      "backupSources": [],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "遇见",
+      "artist": "孙燕姿",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1Xu4y1Q7dw",
+      "biliTitle": "【4K Hi-Res】遇见-孙燕姿 我遇见你 是最美丽的意外",
+      "biliAuthor": "你去巴黎我在北京",
+      "durationSec": 211,
+      "playCount": 648593,
+      "sourceScore": 35.62,
+      "backupSources": [
+        {
+          "bvid": "BV1xg411E7xg",
+          "title": "遇见 - 孙燕姿 -【Hi-Res无损音质】-【动态歌词Lyrics】",
+          "author": "知己音乐",
+          "dur": 210,
+          "score": 33.71
+        },
+        {
+          "bvid": "BV1hhbSzjE9t",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《遇见》- 孙燕姿 -‘我排着队 拿着爱的号码牌’",
+          "author": "VV音乐局",
+          "dur": 211,
+          "score": 33.02
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S级）：「听见冬天的离开」开头完整，钢琴间奏干净通透，收在「未来有一个人在等待」，音色清甜贴合度极高",
+      "qaBatch": 1,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-05dec602907c",
+      "renderedDurSec": 51,
+      "pitchChange": 0,
+      "hnrDb": 18.5,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "我怀念的",
+      "artist": "孙燕姿",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1nhKbzjE58",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《我怀念的》- 孙燕姿 -‘我还有想要 爱你的冲动’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 290,
+      "playCount": 188375,
+      "sourceScore": 34.55,
+      "backupSources": [
+        {
+          "bvid": "BV1Vg411a7jJ",
+          "title": "【无损音质】我怀念的 - 孙燕姿“我怀念的是无话不说 我怀念的是一起作梦 我怀念的是争吵以后 还是想要爱你的冲动”",
+          "author": "别吃羊羊串",
+          "dur": 290,
+          "score": 34.05
+        },
+        {
+          "bvid": "BV1Gwo5BqEyC",
+          "title": "【4K极致修复丨Hi-Res无损】孙燕姿 - 我怀念的 MV 2160P 歌词重制",
+          "author": "4K臻彩映画",
+          "dur": 295,
+          "score": 33.78
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "天黑黑",
+      "artist": "孙燕姿",
+      "category": "华语女声流行",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1sT411s7Vn",
+      "biliTitle": "天黑黑-孙燕姿【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 237,
+      "playCount": 467305,
+      "sourceScore": 35.34,
+      "backupSources": [
+        {
+          "bvid": "BV1MQseeYEqs",
+          "title": "【4K修复】孙燕姿 - 天黑黑 MV [Hires无损音质] 爷青回！",
+          "author": "时光音乐阁",
+          "dur": 241,
+          "score": 34.81
+        },
+        {
+          "bvid": "BV1uU411S79x",
+          "title": "[AI Enhanced • 4K 超清 • Hi-Res 無損] 孫燕姿 - 天黑黑 MV「沒有一個22歲的女生，像她這樣唱歌。」",
+          "author": "Henry的小小世界",
+          "dur": 242,
+          "score": 20.55
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "绿光",
+      "artist": "孙燕姿",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1Qb411d7Yz",
+      "biliTitle": "绿光-孙燕姿【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 192,
+      "playCount": 376705,
+      "sourceScore": 35.15,
+      "backupSources": [
+        {
+          "bvid": "BV1KoYtz9EA5",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《绿光》- 孙燕姿 -‘期待着一个幸运和一个冲击  多么奇妙的际遇’",
+          "author": "VV音乐局",
+          "dur": 192,
+          "score": 33.15
+        },
+        {
+          "bvid": "BV1XJ496VEoW",
+          "title": "【Hi-Res无损】孙燕姿-绿光「遇见了一个传奇 却如此熟悉 在天空里的精灵」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 195,
+          "score": 32.71
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "空白格",
+      "artist": "蔡健雅",
+      "category": "华语女声流行",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1a24y1X7Nz",
+      "biliTitle": "【无损】蔡健雅《空白格》“我想你是爱我的 我猜你也舍不得 但是怎么说 总觉得 我们之间留了太多空白格”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 253,
+      "playCount": 465877,
+      "sourceScore": 35.34,
+      "backupSources": [
+        {
+          "bvid": "BV1do4y1i7Qi",
+          "title": "空白格 - 蔡健雅【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 253,
+          "score": 33.85
+        },
+        {
+          "bvid": "BV1umULBjEQ5",
+          "title": "蔡健雅《空白格》Hi-Res无损音质纯享版",
+          "author": "Harmony-47",
+          "dur": 251,
+          "score": 30.01
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S+封神级清唱）：「其实很简单」起至「你不再需要给我个答案」止，零吃字零漏句、真换气近麦感拉满、零伴奏漏音与嗡鸣，媲美真人手机清唱",
+      "qaBatch": 1,
+      "qaScore": 10,
+      "qaMode": "acappella",
+      "cacheId": "acappella-938bd052cc83",
+      "renderedDurSec": 48.6,
+      "pitchChange": 0,
+      "hnrDb": 20.5,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "达尔文",
+      "artist": "蔡健雅",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1H84y1g7Wo",
+      "biliTitle": "达尔文-蔡健雅【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 266,
+      "playCount": 502347,
+      "sourceScore": 35.4,
+      "backupSources": [
+        {
+          "bvid": "BV14n4y1d75B",
+          "title": "【Hi-Res无损】蔡健雅《达尔文》“我的青春 也不是没伤痕 是明白爱是信仰的延伸”| 音乐可视化 | 动态歌词",
+          "author": "Music小铁匠",
+          "dur": 266,
+          "score": 33.42
+        },
+        {
+          "bvid": "BV14V4y1t7m6",
+          "title": "►动态歌词排版 | 达尔文 | 蔡健雅 | “我的青春 有时还蛮单纯”",
+          "author": "萩原千理",
+          "dur": 231,
+          "score": 30.83
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "勇气",
+      "artist": "梁静茹",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV196421M73k",
+      "biliTitle": "【Hi-Res无损】梁静茹《勇气》“爱真的需要勇气  来面对流言蜚语”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 240,
+      "playCount": 441135,
+      "sourceScore": 35.29,
+      "backupSources": [
+        {
+          "bvid": "BV1smuEziEKV",
+          "title": "【Hi-Res无损】梁静茹-勇气「爱真的需要勇气 来面对流言蜚语」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 240,
+          "score": 34.49
+        },
+        {
+          "bvid": "BV1yJMq6YE5A",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《勇气》- 梁静茹  -‘ 爱真的需要勇气 来面对流言蜚语’",
+          "author": "VV音乐局",
+          "dur": 240,
+          "score": 33.34
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "暖暖",
+      "artist": "梁静茹",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1Pm4y1q73J",
+      "biliTitle": "【Hi-Res无损】梁静茹《暖暖》“我想说其实你很好 你自己却不知道 真心的对我好 不要求回报”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 246,
+      "playCount": 838332,
+      "sourceScore": 35.85,
+      "backupSources": [
+        {
+          "bvid": "BV1494y1k7Zs",
+          "title": "【4K Hi-Res】暖暖-梁静茹 爱一个人希望他过更好",
+          "author": "你去巴黎我在北京",
+          "dur": 244,
+          "score": 34.41
+        },
+        {
+          "bvid": "BV182421Z7zz",
+          "title": "梁静茹《暖暖》无损音质【Hi-Res】",
+          "author": "音乐灵魂伴侣",
+          "dur": 244,
+          "score": 31.69
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "第1版主歌首句「都可以随便的」被切词失真；重跑精确锁点经典副歌（60.0s~94.5s，「分享热汤」至「你比自己更重要」清脆吉他收尾）后近乎满分过审（S+级），极甜美自然",
+      "qaBatch": 1,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-d40a687a4194",
+      "renderedDurSec": 45.4,
+      "pitchChange": 0,
+      "hnrDb": 21.2,
+      "attempts": 2,
+      "replicateCalls": 4,
+      "startOverrideSec": 60,
+      "secondsOverride": 34.5,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "可惜不是你",
+      "artist": "梁静茹",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1XM411K7RN",
+      "biliTitle": "【4K Hi-Res】可惜不是你 - 梁静茹   可惜不是你 陪我到最后",
+      "biliAuthor": "你去巴黎我在北京",
+      "durationSec": 287,
+      "playCount": 165518,
+      "sourceScore": 34.44,
+      "backupSources": [
+        {
+          "bvid": "BV1yD421n7Sw",
+          "title": "梁静茹-可惜不是你(无损音质4K60MV)[中文字幕]SQ(FLAC16/44)",
+          "author": "无损Hi-Res音乐",
+          "dur": 286,
+          "score": 32.94
+        },
+        {
+          "bvid": "BV1gPby6nEjy",
+          "title": "【Hi-Res无损】梁静茹-可惜不是你「可惜不是你 陪我到最后 曾一起走却走失那路口」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 286,
+          "score": 32.9
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "小手拉大手",
+      "artist": "梁静茹",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1AM411X7LG",
+      "biliTitle": "【Hi-Res无损】梁静茹《小手拉大手》“还记得那场音乐会的烟火 还记得那个凉凉的深秋”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 247,
+      "playCount": 392686,
+      "sourceScore": 35.19,
+      "backupSources": [
+        {
+          "bvid": "BV14Y4y1v72c",
+          "title": "【小手拉大手-梁静茹】甜向动态歌词排版分享|Seineseele",
+          "author": "Seineseele",
+          "dur": 247,
+          "score": 33.19
+        },
+        {
+          "bvid": "BV1KoTM6QEFs",
+          "title": "在专业录音棚听 梁静茹《小手拉大手》｜Hi-Res 无损",
+          "author": "草莓野怪",
+          "dur": 249,
+          "score": 31.74
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "小幸运",
+      "artist": "田馥甄",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1y82uB2ET4",
+      "biliTitle": "【Hi-Res无损】田馥甄《小幸运》“原来你是我最想留住的幸运 原来我们和爱情曾经靠得那么近”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 264,
+      "playCount": 902307,
+      "sourceScore": 35.91,
+      "backupSources": [
+        {
+          "bvid": "BV1yg4y1c7nh",
+          "title": "不是花火呀 - 小幸运 (原唱: 田馥甄)「原来你是我最想留住的幸运 原来我们和爱情曾经靠得那么近」【动态歌词】♪",
+          "author": "秋空の音符",
+          "dur": 178,
+          "score": 32.22
+        },
+        {
+          "bvid": "BV1QL4y1t7z4",
+          "title": "【4K珍藏】田馥甄《小幸运》我的少女时代版！",
+          "author": "4K音乐馆",
+          "dur": 289,
+          "score": 31.02
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "首跑遇 Replicate 网络瞬断，第2次一次过审（S级）：「我听见雨滴落在青青草地」至「离别了才觉得刻骨铭心」完整无漏句，人声极净(HNR 20.9dB)",
+      "qaBatch": 1,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-bbd478e5dd56",
+      "renderedDurSec": 46,
+      "pitchChange": 0,
+      "hnrDb": 20.9,
+      "attempts": 2,
+      "replicateCalls": 3,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "魔鬼中的天使",
+      "artist": "田馥甄",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV11ACYBrEwG",
+      "biliTitle": "【4K修复】Hebe 田馥甄 - 魔鬼中的天使 MV 2160P Hi-Res 歌词重制",
+      "biliAuthor": "甄爱SHE",
+      "durationSec": 253,
+      "playCount": 99478,
+      "sourceScore": 34,
+      "backupSources": [
+        {
+          "bvid": "BV1VkAkzvEa5",
+          "title": "魔鬼中的天使 - 田馥甄【Hi-Res无损音质】",
+          "author": "秋与音乐",
+          "dur": 236,
+          "score": 32.95
+        },
+        {
+          "bvid": "BV19P4y1x7FZ",
+          "title": "【4K HDR/60fps】田馥甄《魔鬼中的天使》-但是想都别想我求饶",
+          "author": "张裁缝666",
+          "dur": 250,
+          "score": 29.6
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "泡沫",
+      "artist": "邓紫棋",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1ky4y157AQ",
+      "biliTitle": "【无损音质】邓紫棋-泡沫「早该知道泡沫 一触就破 就像已伤的心 不胜折磨」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 259,
+      "playCount": 1865787,
+      "sourceScore": 36.54,
+      "backupSources": [
+        {
+          "bvid": "BV1AA6cBrEYP",
+          "title": "【Hi-Res无损】邓紫棋-泡沫「美丽的泡沫 虽然一刹花火 你所有承诺 虽然都太脆弱」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 259,
+          "score": 34.15
+        },
+        {
+          "bvid": "BV1js4y1D7oA",
+          "title": "泡沫-邓紫棋【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 273,
+          "score": 33.99
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "喜欢你",
+      "artist": "邓紫棋",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1Jc411G78H",
+      "biliTitle": "【Hi-Res无损】邓紫棋-喜欢你「喜欢你 那双眼动人 笑声更迷人」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 240,
+      "playCount": 898192,
+      "sourceScore": 35.91,
+      "backupSources": [
+        {
+          "bvid": "BV1Vr421c7qs",
+          "title": "【无损Hi-Res】邓紫棋《喜欢你》“细雨带风湿透黄昏的街道，抹去雨水双眼无故地仰望”-4K",
+          "author": "上岸音乐馆",
+          "dur": 240,
+          "score": 34.35
+        },
+        {
+          "bvid": "BV1T84y1a7iK",
+          "title": "【4K Hi-Res]喜欢你-邓紫棋  路灯下的光泛起伤感的记忆",
+          "author": "你去巴黎我在北京",
+          "dur": 240,
+          "score": 34.23
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "光年之外",
+      "artist": "邓紫棋",
+      "category": "华语女声流行",
+      "mode": "ktv",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1QU4y1n7Pa",
+      "biliTitle": "【无损音质】邓紫棋《光年之外》4K画质「缘分让我们相遇乱世以外 命运却要我们危难中相爱」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 236,
+      "playCount": 1354417,
+      "sourceScore": 36.26,
+      "backupSources": [
+        {
+          "bvid": "BV1DZ421e75i",
+          "title": "【无损Hi-Res】邓紫棋《光年之外》“也许未来遥远在光年之外，我愿守候未知里为你等待”-4K",
+          "author": "上岸音乐馆",
+          "dur": 236,
+          "score": 33.96
+        },
+        {
+          "bvid": "BV1ws411Y7wi",
+          "title": "G.E.M.邓紫棋 - 光年之外MV. 1080P",
+          "author": "PearlGEM",
+          "dur": 236,
+          "score": 25.38
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "慢慢喜欢你",
+      "artist": "莫文蔚",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1YK41167dZ",
+      "biliTitle": "【无损】莫文蔚《慢慢喜欢你》“慢慢喜欢你 慢慢地亲密 慢慢聊自己 慢慢和你走在一起”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 222,
+      "playCount": 362473,
+      "sourceScore": 35.12,
+      "backupSources": [
+        {
+          "bvid": "BV1AAXCBREPi",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《慢慢喜欢你》- 莫文蔚 -‘慢慢的陪你慢慢的老去’",
+          "author": "VV音乐局",
+          "dur": 222,
+          "score": 34.95
+        },
+        {
+          "bvid": "BV1KW411x7wq",
+          "title": "【蓝光1080P】莫文蔚《慢慢喜欢你》官方MV",
+          "author": "华语新歌MV",
+          "dur": 368,
+          "score": 33.62
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "盛夏的果实",
+      "artist": "莫文蔚",
+      "category": "华语女声流行",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1ER4y1Y7du",
+      "biliTitle": "盛夏的果实 - 莫文蔚 -【Hi-Res无损音质】-【动态歌词Lyrics】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 251,
+      "playCount": 548621,
+      "sourceScore": 35.48,
+      "backupSources": [
+        {
+          "bvid": "BV11L411S7dt",
+          "title": "【4K Hi-Res】盛夏的果实_莫文蔚  如果你会梦见我 请你再抱紧我",
+          "author": "你去巴黎我在北京",
+          "dur": 252,
+          "score": 34.54
+        },
+        {
+          "bvid": "BV1JKjH6iEuB",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《盛夏的果实》- 莫文蔚 -‘如果你会梦见我  请你再抱紧我’",
+          "author": "VV音乐局",
+          "dur": 252,
+          "score": 34.24
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "隐形的翅膀",
+      "artist": "张韶涵",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1cp421X7MG",
+      "biliTitle": "【Hi-Res无损】张韶涵《隐形的翅膀》“我终于翱翔   用心凝望不害怕  哪里会有风就飞多远吧”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 223,
+      "playCount": 726874,
+      "sourceScore": 35.72,
+      "backupSources": [
+        {
+          "bvid": "BV1fmugzYEwL",
+          "title": "张韶涵 - 隐形的翅膀【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 223,
+          "score": 33.02
+        },
+        {
+          "bvid": "BV1G2bW6cE8U",
+          "title": "【极品高清4K】张韶涵《隐形的翅膀》MV Hi-Res无损音频超清修复",
+          "author": "时光唱片行",
+          "dur": 226,
+          "score": 31.68
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "欧若拉",
+      "artist": "张韶涵",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1Ft411n7Fj",
+      "biliTitle": "【4K修复】张韶涵 - 欧若拉 MV 无损Hi-Res 2160P修复版",
+      "biliAuthor": "zyl2012_音乐无限",
+      "durationSec": 260,
+      "playCount": 2615232,
+      "sourceScore": 36.84,
+      "backupSources": [
+        {
+          "bvid": "BV1pTiYBWECW",
+          "title": "【Hi-Res无损】张韶涵-欧若拉「爱是一道光 如此美妙 指引我们 想要的未来」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 262,
+          "score": 34.07
+        },
+        {
+          "bvid": "BV1iKaq61Eax",
+          "title": "【极品高清4K】张韶涵《欧若拉》MV Hi-Res无损音频超清修复",
+          "author": "时光唱片行",
+          "dur": 260,
+          "score": 32.4
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "爱你",
+      "artist": "王心凌",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1vRLs6iEce",
+      "biliTitle": "【SeedVR2-顶级4K修复】Cyndi 王心凌 - 爱你 MV 2160P Hi-Res",
+      "biliAuthor": "甄爱SHE",
+      "durationSec": 220,
+      "playCount": 125736,
+      "sourceScore": 34.2,
+      "backupSources": [
+        {
+          "bvid": "BV1XJtA6PEaY",
+          "title": "【极品高清4K】王心凌《爱你》MV Hi-Res无损音频超清修复",
+          "author": "时光唱片行",
+          "dur": 224,
+          "score": 33.18
+        },
+        {
+          "bvid": "BV1a34y1j7R5",
+          "title": "【无损音质】【静态MV】爱你 - 王心凌",
+          "author": "唯声音乐",
+          "dur": 220,
+          "score": 32.01
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "第一次爱的人",
+      "artist": "王心凌",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1jb421h73o",
+      "biliTitle": "第一次爱的人 - 王心凌【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 230,
+      "playCount": 505227,
+      "sourceScore": 35.41,
+      "backupSources": [
+        {
+          "bvid": "BV1EY4y1n7Ue",
+          "title": "曾风靡全球的经典少女歌曲《The day you went away》无损音质，王心凌《第一次爱的人》英文原曲",
+          "author": "仰望星空音乐梦",
+          "dur": 216,
+          "score": 34.24
+        },
+        {
+          "bvid": "BV1EeinB7EDZ",
+          "title": "【4K Hi-Res】第一次爱的人-王心凌 总以为 爱是全部的心跳",
+          "author": "你去巴黎我在北京",
+          "dur": 234,
+          "score": 34.08
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "旅行的意义",
+      "artist": "陈绮贞",
+      "category": "华语女声流行",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1gEL16QEXw",
+      "biliTitle": "【Hi-Res无损音质】｜《旅行的意义》- 陈绮贞“你离开我  就是旅行的意义”《台北飘雪》电影插曲",
+      "biliAuthor": "蒸汽和弦",
+      "durationSec": 257,
+      "playCount": 123513,
+      "sourceScore": 34.18,
+      "backupSources": [
+        {
+          "bvid": "BV1TfTd6dEuv",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《旅行的意义》- 陈绮贞 -‘你离开我  就是旅行的意义’",
+          "author": "VV音乐局",
+          "dur": 257,
+          "score": 32.64
+        },
+        {
+          "bvid": "BV1yP4y1A7FA",
+          "title": "【4K修复】陈绮贞 - 旅行的意义 MV",
+          "author": "舒言星",
+          "dur": 266,
+          "score": 29.31
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "红豆",
+      "artist": "王菲",
+      "category": "华语女声流行",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1PM4y117BF",
+      "biliTitle": "红豆-王菲【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 257,
+      "playCount": 444988,
+      "sourceScore": 35.3,
+      "backupSources": [
+        {
+          "bvid": "BV1ze411u7vL",
+          "title": "经典天籁！【4K】王菲《红豆》 |‘有时候 有时候 我会相信一切有尽头’| 音乐可视化 | 动态歌词",
+          "author": "Music小铁匠",
+          "dur": 256,
+          "score": 34.54
+        },
+        {
+          "bvid": "BV1KZePzfEc6",
+          "title": "【4K Hi-Res】红豆-王菲",
+          "author": "如歌如梦",
+          "dur": 257,
+          "score": 32.4
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "匆匆那年",
+      "artist": "王菲",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV19q4y197N5",
+      "biliTitle": "【无损音质】王菲《匆匆那年》4K画质「如果再见不能红着眼 是否还能红着脸」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 242,
+      "playCount": 1152551,
+      "sourceScore": 36.12,
+      "backupSources": [
+        {
+          "bvid": "BV1r9MgzvEsT",
+          "title": "匆匆那年-王菲【Hi-Res无损音质】如果再见不能红着眼，是否还能红着脸",
+          "author": "知己音乐",
+          "dur": 242,
+          "score": 33.93
+        },
+        {
+          "bvid": "BV1Pb4y1A7o1",
+          "title": "【Hi-Res无损】《匆匆那年》王菲 - 匆匆那年我们  究竟说了几遍  再见之后再拖延",
+          "author": "繁华落尽的恋曲e",
+          "dur": 240,
+          "score": 33.27
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "挥着翅膀的女孩",
+      "artist": "容祖儿",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1YG411271R",
+      "biliTitle": "【Hi-Res无损】容祖儿《挥着翅膀的女孩》“当我还是一个懵懂的女孩 遇到爱不懂爱 从过去到现在”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 190,
+      "playCount": 96933,
+      "sourceScore": 33.97,
+      "backupSources": [
+        {
+          "bvid": "BV1c1dkYBEqU",
+          "title": "挥着翅膀的女孩 - 容祖儿【真·Hi-Res无损音质】",
+          "author": "道不出当时年少",
+          "dur": 186,
+          "score": 32.2
+        },
+        {
+          "bvid": "BV18H4y1s7e7",
+          "title": "【容祖儿】一首流行歌曲《挥着翅膀的女孩儿》太好听了，令人百听不厌啊！[SQ无损品质]",
+          "author": "可爱的于小鱼",
+          "dur": 193,
+          "score": 32.03
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "后来",
+      "artist": "刘若英",
+      "category": "华语女声流行",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1Fo4y1H7vt",
+      "biliTitle": "【Hi-Res无损】刘若英-后来「后来 我总算学会了 如何去爱」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 342,
+      "playCount": 1342629,
+      "sourceScore": 36.26,
+      "backupSources": [
+        {
+          "bvid": "BV1HBYmzBEc5",
+          "title": "【4K Hi-Res】后来_刘若英  在这相似的深夜里  你是否一样  也在静静追悔感伤",
+          "author": "你去巴黎我在北京",
+          "dur": 342,
+          "score": 33.9
+        },
+        {
+          "bvid": "BV1HByaYVEjJ",
+          "title": "后来 - 刘若英【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 342,
+          "score": 33.88
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "我要你",
+      "artist": "任素汐",
+      "category": "治愈民谣女声",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1xF411p7tR",
+      "biliTitle": "【4K珍藏】任素汐《我要你》，开口脆！",
+      "biliAuthor": "4K音乐馆",
+      "durationSec": 158,
+      "playCount": 1405700,
+      "sourceScore": 30.3,
+      "backupSources": [
+        {
+          "bvid": "BV1t5sY6uEZa",
+          "title": "【4K Hi-Res】我要你-任素汐",
+          "author": "如歌如梦",
+          "dur": 155,
+          "score": 29.38
+        },
+        {
+          "bvid": "BV1jfnz6ZEJ3",
+          "title": "假如任素汐《我要你》是一首俄语歌曲“我要你在我身旁…”",
+          "author": "梨茗子",
+          "dur": 184,
+          "score": 22.16
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "往后余生",
+      "artist": "王贰浪",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1afeoebEmU",
+      "biliTitle": "【4k无损】《往后余生》—王贰浪",
+      "biliAuthor": "醉人云烟",
+      "durationSec": 232,
+      "playCount": 22603,
+      "sourceScore": 32.71,
+      "backupSources": [
+        {
+          "bvid": "BV1oU4y1W7Du",
+          "title": "《往后余生》完整版MV#王贰浪##往",
+          "author": "a先生_M",
+          "dur": 273,
+          "score": 32.71
+        },
+        {
+          "bvid": "BV1fpfGYQEma",
+          "title": "王贰浪 - 往后余生『往后余生 风雪是你 平淡是你』（动态歌词/Lyrics Video/无损音质/4k）",
+          "author": "COYMusicChannel",
+          "dur": 232,
+          "score": 32.68
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "云烟成雨",
+      "artist": "房东的猫",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV13r4y137Tc",
+      "biliTitle": "【杜比音效】房东的猫《云烟成雨》「我多想再见你 哪怕匆匆一眼就别离」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 241,
+      "playCount": 1730991,
+      "sourceScore": 36.48,
+      "backupSources": [
+        {
+          "bvid": "BV1D4RVYPExm",
+          "title": "【4K Hi-Res】云烟成雨_房东的猫   你的晚安 是下意识的恻隐",
+          "author": "你去巴黎我在北京",
+          "dur": 241,
+          "score": 34.47
+        },
+        {
+          "bvid": "BV1HL4y1L7cR",
+          "title": "【口琴】云烟成雨 房东的猫 多想再见你 哪怕一眼就别离",
+          "author": "Clock口琴",
+          "dur": 230,
+          "score": 19.37
+        }
+      ],
+      "qaStatus": "rejected",
+      "qaNote": "避坑已剔除：杜比音效源(BV13r4y137Tc)首句「你的晚安」的「你」字为极轻气声，两次尝试（含手动提前至15.2s含前奏）均被 Demucs/Pre-RVC 门限吞掉首字；建议后续改非杜比原版并切副歌段再试",
+      "qaBatch": 1,
+      "qaScore": 6.5,
+      "qaMode": "bedroom_bgm",
+      "cacheId": null,
+      "renderedDurSec": 53.5,
+      "pitchChange": 0,
+      "hnrDb": 20.8,
+      "attempts": 2,
+      "replicateCalls": 4,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "秋酿",
+      "artist": "房东的猫",
+      "category": "治愈民谣女声",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1vCdpYMEHF",
+      "biliTitle": "【Hi-Res无损音质】房东的猫《秋酿》这歌原来这么好听 ！ 经典歌曲最好听的版本 4K60P",
+      "biliAuthor": "造梦可汗",
+      "durationSec": 219,
+      "playCount": 18785,
+      "sourceScore": 32.55,
+      "backupSources": [
+        {
+          "bvid": "BV15t411x7n6",
+          "title": "房东的猫——秋酿",
+          "author": "学堂路上的猫",
+          "dur": 210,
+          "score": 19.23
+        },
+        {
+          "bvid": "BV13Q4y197ab",
+          "title": "房东的《秋酿》「CCTV 1080P」",
+          "author": "LixxCn",
+          "dur": 219,
+          "score": 11.23
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "美好事物",
+      "artist": "房东的猫",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1L4411v7hy",
+      "biliTitle": "【推歌向】房东的猫  美好事物（含网易云评论）",
+      "biliAuthor": "薄荷威尼",
+      "durationSec": 197,
+      "playCount": 6643,
+      "sourceScore": 17.64,
+      "backupSources": [
+        {
+          "bvid": "BV1Qs4y1t7AP",
+          "title": "MP3| 「美好事物」房东的猫| 热夏 你归来 听蝉",
+          "author": "忘记了密码555",
+          "dur": 200,
+          "score": 15.6
+        },
+        {
+          "bvid": "BV1Pb411v7dQ",
+          "title": "房東的貓 - 美好事物 (2017) [歌詞字幕][完整高清音質]",
+          "author": "一切都是音乐",
+          "dur": 255,
+          "score": 11.71
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "小半",
+      "artist": "陈粒",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1w8fbBaETr",
+      "biliTitle": "陈粒《小半》“不敢回看，左顾右盼不自然的暗自喜欢”-【Hi-Res无损】",
+      "biliAuthor": "上岸音乐馆",
+      "durationSec": 298,
+      "playCount": 986565,
+      "sourceScore": 35.99,
+      "backupSources": [
+        {
+          "bvid": "BV1gX4y1U7Rx",
+          "title": "“这首歌又是谁的单曲循环？”《小半》— 陈粒",
+          "author": "Sean_Dream",
+          "dur": 294,
+          "score": 34.99
+        },
+        {
+          "bvid": "BV1TbygBJEL9",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《小半》- 陈粒 -‘时间风干后你与我再无关’",
+          "author": "VV音乐局",
+          "dur": 298,
+          "score": 34.86
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "奇妙能力歌",
+      "artist": "陈粒",
+      "category": "治愈民谣女声",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1qCtWzEEv5",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《奇妙能力歌》- 陈粒 -‘我看过沙漠下暴雨 看过大海亲吻鲨鱼’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 254,
+      "playCount": 84076,
+      "sourceScore": 33.85,
+      "backupSources": [
+        {
+          "bvid": "BV1QKCyYfE1z",
+          "title": "【4K Hi-Res】奇妙能力歌_陈粒",
+          "author": "你去巴黎我在北京",
+          "dur": 254,
+          "score": 33.73
+        },
+        {
+          "bvid": "BV1ncygBBEcK",
+          "title": "陈粒《奇妙能力歌》Hi-Res无损音质纯享版",
+          "author": "Harmony-47",
+          "dur": 252,
+          "score": 30.09
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "易燃易爆炸",
+      "artist": "陈粒",
+      "category": "治愈民谣女声",
+      "mode": "ktv",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV11R4y1p7x1",
+      "biliTitle": "【无损音质】陈粒《易燃易爆炸》4K画质「为我撩人 还为我双眸失神」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 201,
+      "playCount": 187161,
+      "sourceScore": 34.54,
+      "backupSources": [
+        {
+          "bvid": "BV1pdj3zaEb4",
+          "title": "【4K Hi-Res】易燃易爆炸_陈粒  祝我从此幸福还祝我枯萎不渡",
+          "author": "你去巴黎我在北京",
+          "dur": 201,
+          "score": 33.21
+        },
+        {
+          "bvid": "BV1SW411v7JK",
+          "title": "【陈粒】官方MV 《易燃易爆炸》",
+          "author": "昂昂溪一哥",
+          "dur": 200,
+          "score": 29.8
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "我在人民广场吃炸鸡",
+      "artist": "阿肆",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1so4y1s7iN",
+      "biliTitle": "【无损音质】【成名曲】阿肆-我在人民广场吃炸鸡",
+      "biliAuthor": "古今乐府",
+      "durationSec": 216,
+      "playCount": 153,
+      "sourceScore": 28.37,
+      "backupSources": [
+        {
+          "bvid": "BV1kVPnebEEF",
+          "title": "阿肆-我在人民广场吃炸鸡(原唱MV)",
+          "author": "小草绿儿",
+          "dur": 231,
+          "score": 24.2
+        },
+        {
+          "bvid": "BV1ss411f7aT",
+          "title": "阿肆《我在人民广场吃炸鸡》原版MV",
+          "author": "问路於盲",
+          "dur": 230,
+          "score": 24.1
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "世界这么大还是遇见你",
+      "artist": "程响",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1hGNUeoExg",
+      "biliTitle": "世界这么大还是遇见你 - 程响【真·Hi-Res无损音质】",
+      "biliAuthor": "道不出当时年少",
+      "durationSec": 229,
+      "playCount": 28074,
+      "sourceScore": 32.9,
+      "backupSources": [
+        {
+          "bvid": "BV1wpzqB6EeH",
+          "title": "【4K Hi-Res】世界这么大还是遇见你-程响",
+          "author": "如歌如梦",
+          "dur": 238,
+          "score": 31.76
+        },
+        {
+          "bvid": "BV1T7411c7Z7",
+          "title": "程响--《世界那么大还是遇见你》『世界这么大还是遇见你 一起走过许多个四季』【動態歌詞Lyrics】",
+          "author": "尼白观影-",
+          "dur": 238,
+          "score": 25.08
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "绿色",
+      "artist": "陈雪凝",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1eu4y1y7ZG",
+      "biliTitle": "【Hi-Res无损】陈雪凝《绿色》“若不是你突然闯进我生活  我怎会把死守的寂寞放任了”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 270,
+      "playCount": 2580471,
+      "sourceScore": 36.82,
+      "backupSources": [
+        {
+          "bvid": "BV154421c7K5",
+          "title": "【无损Hi-Res】陈雪凝《绿色》&quot;若不是你突然闯进我生活，我怎会把死守的寂寞放任了“-4K",
+          "author": "上岸音乐馆",
+          "dur": 270,
+          "score": 36.07
+        },
+        {
+          "bvid": "BV1PCzSByEHS",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《绿色》- 陈雪凝 -‘从此你在我心里  只剩绿色’",
+          "author": "VV音乐局",
+          "dur": 270,
+          "score": 35.42
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "你的酒馆对我打了烊",
+      "artist": "陈雪凝",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1GB4y1c7MZ",
+      "biliTitle": "陈雪凝-你的酒馆对我打了烊-官方MV完整版",
+      "biliAuthor": "香蕉肉丸胡辣汤",
+      "durationSec": 250,
+      "playCount": 317977,
+      "sourceScore": 38,
+      "backupSources": [
+        {
+          "bvid": "BV1g64y1q7J7",
+          "title": "【无损音质】陈雪凝《你的酒馆对我打了烊》4K画质「你的酒馆对我打了烊 子弹在我心头上了膛」动态歌词版",
+          "author": "索性自挂东南枝",
+          "dur": 252,
+          "score": 35.57
+        },
+        {
+          "bvid": "BV1LeVSznEpf",
+          "title": "【4K Hi-Res】绿色-陈雪凝  你的酒馆对我打了烊",
+          "author": "你去巴黎我在北京",
+          "dur": 270,
+          "score": 33.62
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "时间煮雨",
+      "artist": "郁可唯",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1C44y1B7Uh",
+      "biliTitle": "【无损音质】郁可唯《时间煮雨》4K画质「你曾说过不分离 要一直一直在一起」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 248,
+      "playCount": 3596319,
+      "sourceScore": 37.11,
+      "backupSources": [
+        {
+          "bvid": "BV1fX4y1p7w5",
+          "title": "【Hi-Res无损】郁可唯《时间煮雨》“风吹雨成花 时间追不上白马 你年少掌心的梦话 依然紧握着吗”| 音乐可视化 | 动态歌词",
+          "author": "Music小铁匠",
+          "dur": 248,
+          "score": 34.7
+        },
+        {
+          "bvid": "BV1MZ421p7SY",
+          "title": "郁可唯 - 时间煮雨｜完整版 动态歌词LyricsVideo 无损音质",
+          "author": "真好听Realmusic",
+          "dur": 242,
+          "score": 33.03
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "身骑白马",
+      "artist": "徐佳莹",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1w2421c7iv",
+      "biliTitle": "【Hi-Res无损】徐佳莹-身骑白马「我身骑白马 走三关」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 314,
+      "playCount": 579065,
+      "sourceScore": 35.53,
+      "backupSources": [
+        {
+          "bvid": "BV1p6421f7Gs",
+          "title": "【4K Hi-Res】身骑白马_徐佳莹   眼前荒沙弥漫了等候  耳边传来孱弱的呼救",
+          "author": "你去巴黎我在北京",
+          "dur": 314,
+          "score": 33.85
+        },
+        {
+          "bvid": "BV1Hr4y1t73v",
+          "title": "徐佳莹-身骑白马 MV 【1080P重制版】",
+          "author": "班扎咕噜",
+          "dur": 317,
+          "score": 24.02
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "宝贝",
+      "artist": "张悬",
+      "category": "治愈民谣女声",
+      "mode": "acappella",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1wM1vYsEn9",
+      "biliTitle": "【4K修复&amp;Hi-Res】张悬《宝贝》MV 孤单时有人把你想念",
+      "biliAuthor": "超爱大可乐",
+      "durationSec": 146,
+      "playCount": 261983,
+      "sourceScore": 34.84,
+      "backupSources": [
+        {
+          "bvid": "BV1o3E16TEd2",
+          "title": "【Hi-Res无损音质】《宝贝》 (In A Day) -张悬 “我的宝贝 宝贝 给你一点甜甜，让你今夜都好眠～”",
+          "author": "无忧音乐屋",
+          "dur": 146,
+          "score": 31.14
+        },
+        {
+          "bvid": "BV1uz1jYnEdM",
+          "title": "《宝贝》张悬",
+          "author": "阴暗生物成长手册",
+          "dur": 144,
+          "score": 19.56
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "下雨天",
+      "artist": "南拳妈妈",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "notes": "梁心颐独唱女声极干净",
+      "bvid": "BV1tJwTecEJG",
+      "biliTitle": "【4K Hi-Res】下雨天_南拳妈妈   一个人撑伞 一个人擦泪 一个人好累",
+      "biliAuthor": "你去巴黎我在北京",
+      "durationSec": 254,
+      "playCount": 267646,
+      "sourceScore": 34.86,
+      "backupSources": [
+        {
+          "bvid": "BV11vG76xEnk",
+          "title": "【4K珍藏】南拳妈妈《下雨天》MV极致修复！（收录于2008年专辑《优の良曲 南搞小孩》）",
+          "author": "郭总说",
+          "dur": 263,
+          "score": 28.26
+        },
+        {
+          "bvid": "BV1US421d73F",
+          "title": "en - 下雨天『下雨天了怎么办 我好想你』（动态歌词/Lyrics Video/无损音质/4k）",
+          "author": "COYMusicChannel",
+          "dur": 228,
+          "score": 24.12
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "明天你好",
+      "artist": "牛奶咖啡",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1m64y1k7rQ",
+      "biliTitle": "【毕业季】牛奶咖啡《明天你好》毕业神曲！祝愿大家都有美好的前程！",
+      "biliAuthor": "音乐私藏馆",
+      "durationSec": 267,
+      "playCount": 5246937,
+      "sourceScore": 25.44,
+      "backupSources": [
+        {
+          "bvid": "BV1Y5411P7ga",
+          "title": "《明天你好》（牛奶咖啡）半音阶口琴天狼星RC16",
+          "author": "寒哥口琴",
+          "dur": 268,
+          "score": 20.18
+        },
+        {
+          "bvid": "BV1Rk4y1Q7DR",
+          "title": "明天你好-牛奶咖啡",
+          "author": "楼子疃",
+          "dur": 231,
+          "score": 19.58
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S级）：开头「看昨天的我们走远了」完整清晰，结尾平稳收在「在举杯祝福后都走散」，音色温柔治愈无嗡鸣破音，口白与淡入淡出自然",
+      "qaBatch": 2,
+      "qaScore": 9.8,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-decd70866a50",
+      "renderedDurSec": 43,
+      "pitchChange": 0,
+      "hnrDb": 19.7,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T19:41:15.850Z"
+    },
+    {
+      "song": "心墙",
+      "artist": "郭静",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1LEx6zXEqP",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《心墙》- 郭静 -‘你的心有一道墙  但我发现一扇窗’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 228,
+      "playCount": 213401,
+      "sourceScore": 34.66,
+      "backupSources": [
+        {
+          "bvid": "BV13c411c7jB",
+          "title": "心墙 - 郭静【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 228,
+          "score": 34.16
+        },
+        {
+          "bvid": "BV15gUvBVEh1",
+          "title": "【SeedVR2超清修复】心墙-郭静【Hi-Res无损音质】",
+          "author": "小炳音乐",
+          "dur": 235,
+          "score": 32.23
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "最初的梦想",
+      "artist": "范玮琪",
+      "category": "治愈民谣女声",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1UQn7zPEtB",
+      "biliTitle": "【无损音乐】《最初的梦想》—范玮琪",
+      "biliAuthor": "KKang93-Music",
+      "durationSec": 293,
+      "playCount": 12338,
+      "sourceScore": 32.18,
+      "backupSources": [
+        {
+          "bvid": "BV1Z8411L7aA",
+          "title": "【4K修复】范玮琪《最初的梦想》MV",
+          "author": "舒言星",
+          "dur": 296,
+          "score": 30.13
+        },
+        {
+          "bvid": "BV1GRreYbE15",
+          "title": "《最初的梦想》—范玮琪",
+          "author": "我们的老歌",
+          "dur": 297,
+          "score": 22.33
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "给我一个理由忘记",
+      "artist": "A-Lin",
+      "category": "治愈民谣女声",
+      "mode": "ktv",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1NB4y1k7He",
+      "biliTitle": "【超清纯享】A-Lin 黄丽玲-给我一个理由忘记·1080P",
+      "biliAuthor": "你好萝卜HDMusic",
+      "durationSec": 260,
+      "playCount": 2577363,
+      "sourceScore": 36.82,
+      "backupSources": [
+        {
+          "bvid": "BV1pABCB9Eej",
+          "title": "【4K Hi-Res】给我一个理由忘记-A-Lin  我还记得 你说我们要快乐",
+          "author": "你去巴黎我在北京",
+          "dur": 286,
+          "score": 33.07
+        },
+        {
+          "bvid": "BV1KtgW6BEPC",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《给我一个理由忘记》- A-Lin -‘给我一个理由忘记  那么爱我的你’",
+          "author": "VV音乐局",
+          "dur": 286,
+          "score": 32.89
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "起风了",
+      "artist": "买辣椒也用券",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1ft4y1G7so",
+      "biliTitle": "【无损音质】《起风了》-买辣椒也用券  “起风了，也让我想起了那年夏天”",
+      "biliAuthor": "西伯利亚麻雀",
+      "durationSec": 327,
+      "playCount": 3154035,
+      "sourceScore": 37,
+      "backupSources": [
+        {
+          "bvid": "BV1Y1C3BYEfZ",
+          "title": "【4K Hi-Res】起风了-买辣椒也用券",
+          "author": "如歌如梦",
+          "dur": 313,
+          "score": 32.75
+        },
+        {
+          "bvid": "BV17t411b777",
+          "title": "买辣椒也用券《起风了》原版",
+          "author": "阿梦姑娘吖",
+          "dur": 309,
+          "score": 23.94
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "第1版主歌首字「风」轻微吃字；重跑精确锁点副歌高潮（76.5s~115.0s，「我曾难自拔于世界之大」至「任风吹雨打」留白收尾）后高分过审（S级），高音燃且口白极契合",
+      "qaBatch": 1,
+      "qaScore": 9.7,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-8ef28d588b44",
+      "renderedDurSec": 47.6,
+      "pitchChange": 0,
+      "hnrDb": 14.7,
+      "attempts": 2,
+      "replicateCalls": 5,
+      "startOverrideSec": 76.5,
+      "secondsOverride": 38.5,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "追光者",
+      "artist": "岑宁儿",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1kS4y1w73t",
+      "biliTitle": "【杜比音效】岑宁儿-追光者「我可以跟在你身后 像影子追着光梦游」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 236,
+      "playCount": 4035863,
+      "sourceScore": 37.21,
+      "backupSources": [
+        {
+          "bvid": "BV1314y1X7kp",
+          "title": "追光者 - 岑宁儿【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 237,
+          "score": 34.56
+        },
+        {
+          "bvid": "BV1h64y1873i",
+          "title": "【sky光遇-瞳】光遇琴谱 追光者 岑宁儿 完整版sky studio",
+          "author": "Sky光遇琴谱_瞳",
+          "dur": 209,
+          "score": 34.16
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S+级）：开头「如果说你是海上的烟火」完整不吃字，结尾干净收在「总在孤单时候眺望夜空」，人声极其通透（HNR 21.7dB），零嗡鸣且钢琴伴奏轻柔衬托",
+      "qaBatch": 2,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-0b4725cf4d29",
+      "renderedDurSec": 44.6,
+      "pitchChange": 0,
+      "hnrDb": 21.7,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T19:41:15.850Z"
+    },
+    {
+      "song": "体面",
+      "artist": "于文文",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1zQ4y1X7dB",
+      "biliTitle": "【无损音质】于文文《体面》4K画质「分手应该体面 谁都不要说抱歉」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 283,
+      "playCount": 1365969,
+      "sourceScore": 36.27,
+      "backupSources": [
+        {
+          "bvid": "BV1gu41177aY",
+          "title": "【纯享版】于文文《体面》独特嗓音 别有韵味",
+          "author": "酷狗音乐",
+          "dur": 276,
+          "score": 35.79
+        },
+        {
+          "bvid": "BV1JW411q75o",
+          "title": "电影《前任》于文文单曲《体面》原创编舞【单色舞蹈】",
+          "author": "单色舞蹈官方",
+          "dur": 147,
+          "score": 33.47
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "我的歌声里",
+      "artist": "曲婉婷",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1484y1R7Ep",
+      "biliTitle": "【无损音质】我的歌声里-曲婉婷「你存在 我深深的脑海里  我的梦里 我的心里 我的歌声里」",
+      "biliAuthor": "星夜丶忆梦",
+      "durationSec": 217,
+      "playCount": 2507025,
+      "sourceScore": 36.8,
+      "backupSources": [
+        {
+          "bvid": "BV1XkdaYfERd",
+          "title": "【Hi-Res无损音质】曲婉婷 - 我的歌声里",
+          "author": "猫猫不爱吃猫",
+          "dur": 217,
+          "score": 34.81
+        },
+        {
+          "bvid": "BV1mcwEzHEWW",
+          "title": "【4K Hi-Res】我的歌声里-曲婉婷",
+          "author": "如歌如梦",
+          "dur": 217,
+          "score": 32.27
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "飞鸟和蝉",
+      "artist": "任然",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1A14Se6Ekd",
+      "biliTitle": "【Hi-Res无损】任然-飞鸟和蝉「你骄傲地飞远 我栖息的夏天」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 297,
+      "playCount": 903175,
+      "sourceScore": 35.91,
+      "backupSources": [
+        {
+          "bvid": "BV1npxc6qE1J",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《飞鸟和蝉》- 任然 -‘听不见的宣言 重复过很多年’",
+          "author": "VV音乐局",
+          "dur": 296,
+          "score": 33
+        },
+        {
+          "bvid": "BV1eL4y1W7bj",
+          "title": "任然MV | 我的《飞鸟和蝉》，纪念结束的夏天",
+          "author": "音乐人任然",
+          "dur": 294,
+          "score": 25.89
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "疑心病",
+      "artist": "任然",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1xX4y1K7ao",
+      "biliTitle": "【无损音质】任然《疑心病》4K画质「让你爱上我 要多久 我已经爱上你 已走不动」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 293,
+      "playCount": 1030334,
+      "sourceScore": 36.03,
+      "backupSources": [
+        {
+          "bvid": "BV1aUYye9Ei3",
+          "title": "【录音室听】任然-《疑心病》【Hi-Res】无损音质",
+          "author": "雨天音乐室",
+          "dur": 290,
+          "score": 35.04
+        },
+        {
+          "bvid": "BV1nE421N7Jq",
+          "title": "【4K Hi-Res】疑心病_任然    我还在天桥上想拉你的手 吻你额头",
+          "author": "你去巴黎我在北京",
+          "dur": 293,
+          "score": 33.95
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "少年",
+      "artist": "梦然",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1894y1x7Ao",
+      "biliTitle": "(无损)“我还是从前那个少年 没有一丝丝改变”《少年》梦然--好听的中文歌曲推荐",
+      "biliAuthor": "哈尔的音乐",
+      "durationSec": 237,
+      "playCount": 518640,
+      "sourceScore": 35.43,
+      "backupSources": [
+        {
+          "bvid": "BV1Vs9kByEDi",
+          "title": "《少年》- 梦然 [无损音质]“我还是从前那个少年  没有一丝丝改变～”2020年疫情期间你是否还记得",
+          "author": "拾音小记",
+          "dur": 237,
+          "score": 33.58
+        },
+        {
+          "bvid": "BV1rK4y1S7Au",
+          "title": "【4K】梦然《少年》| 乐享中国年 新春欢唱会",
+          "author": "ShenhenTV",
+          "dur": 237,
+          "score": 27.44
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "年轮",
+      "artist": "张碧晨",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1F341197ER",
+      "biliTitle": "【Hi-Res无损】张碧晨-年轮「数着一圈圈年轮 我认真 将心事都封存」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 275,
+      "playCount": 6332493,
+      "sourceScore": 37.6,
+      "backupSources": [
+        {
+          "bvid": "BV1RuLmz1E8r",
+          "title": "年轮 - 张碧晨【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 275,
+          "score": 34.65
+        },
+        {
+          "bvid": "BV1yG88zDEtM",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬·无损】张碧晨《年轮》歌词纯享版 - “曾幻想过永恒 可惜从没人陪我演这剧本”",
+          "author": "听清工作室",
+          "dur": 275,
+          "score": 34.58
+        }
+      ],
+      "qaStatus": "passed",
+      "qaNote": "一次通过（S+级）：开头「圆圈勾勒成指纹」完整不吃字，结尾干净收在「可惜你从未心疼我的笨」，音色清甜通透，伴奏柔和无嗡鸣，口白衔接极自然",
+      "qaBatch": 2,
+      "qaScore": 9.9,
+      "qaMode": "bedroom_bgm",
+      "cacheId": "bedroom_bgm-553d03eb3bc0",
+      "renderedDurSec": 49.7,
+      "pitchChange": 0,
+      "hnrDb": 19.9,
+      "attempts": 1,
+      "replicateCalls": 2,
+      "qaAt": "2026-11-23T19:41:15.850Z"
+    },
+    {
+      "song": "星月神话",
+      "artist": "金莎",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV14G4y1n7te",
+      "biliTitle": "【HD无损】金莎-《星月神话》｜我们的故事并不算美丽，而你未曾出现在我梦里、",
+      "biliAuthor": "熊猫先生-1979",
+      "durationSec": 250,
+      "playCount": 120235,
+      "sourceScore": 34.16,
+      "backupSources": [
+        {
+          "bvid": "BV1BMRRYtEFX",
+          "title": "【无损音质】星月神话完整版--金莎--神话电视剧插曲",
+          "author": "冰城音乐馆",
+          "dur": 246,
+          "score": 32.91
+        },
+        {
+          "bvid": "BV16rgx6iEod",
+          "title": "【4K极品画质】金莎《星月神话》MV 无损音频高清修复",
+          "author": "时光唱片行",
+          "dur": 252,
+          "score": 32.65
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "白月光与朱砂痣",
+      "artist": "大籽",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1vDhGzRERj",
+      "biliTitle": "白月光与朱砂痣-大籽【Hi-Res无损音质】朱砂痣久难消，你是否能知道",
+      "biliAuthor": "知己音乐",
+      "durationSec": 205,
+      "playCount": 799435,
+      "sourceScore": 35.81,
+      "backupSources": [
+        {
+          "bvid": "BV1J5411J792",
+          "title": "白月光与朱砂痣 大籽 动态鼓谱",
+          "author": "看哦爱随风原创鼓谱",
+          "dur": 205,
+          "score": 19.22
+        },
+        {
+          "bvid": "BV1VnkxYCEmR",
+          "title": "完整版《白月光与朱砂痣》峰源萨克斯",
+          "author": "风啸天菱",
+          "dur": 204,
+          "score": 19.07
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "从前说",
+      "artist": "小阿七",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV19R4y1M7Tt",
+      "biliTitle": "【杜比音效】小阿七《从前说》4K画质「从前对妈妈说谎 翻山越岭只为能与你拥抱一场」动态歌词版",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 252,
+      "playCount": 483210,
+      "sourceScore": 35.37,
+      "backupSources": [
+        {
+          "bvid": "BV1JZ421H7KW",
+          "title": "【无损音质】从前说-小阿七“从前对妈妈说谎 翻山越岭只为能与你拥抱一场~”",
+          "author": "遥远与晴music",
+          "dur": 252,
+          "score": 34.33
+        },
+        {
+          "bvid": "BV1wCgj65ETE",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《从前说》- 小阿七 -‘后来你娶了理想我嫁给了户对门当’",
+          "author": "VV音乐局",
+          "dur": 252,
+          "score": 34.27
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "第57次取消发送",
+      "artist": "菲菲公主",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV198KuzLEjx",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《第57次取消发送》- 菲菲公主（陆绮菲） -‘删掉的短信确定不想打扰’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 181,
+      "playCount": 3768141,
+      "sourceScore": 37.15,
+      "backupSources": [
+        {
+          "bvid": "BV196NCzkEL1",
+          "title": "【Hi-Res无损】菲菲公主-第57次取消发送「我好想你 在每个夜里 孤单自叙」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 181,
+          "score": 35.61
+        },
+        {
+          "bvid": "BV17dE7zCEFw",
+          "title": "【4K-HiRes】《第57次取消发送》（加速版）菲菲公主“不太习惯没了你的小宇宙，念旧是上瘾感受”",
+          "author": "小公举电台",
+          "dur": 156,
+          "score": 34.57
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "说爱你",
+      "artist": "蔡依林",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1CG411A7S2",
+      "biliTitle": "好甜【4K】蔡依林《说爱你》“我的世界 变得奇妙更难以言喻 还以为 是从天而降的梦境”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 227,
+      "playCount": 1539790,
+      "sourceScore": 36.37,
+      "backupSources": [
+        {
+          "bvid": "BV1e5411S74u",
+          "title": "【说爱你-蔡依林】动态歌词排版分享|Seineseele",
+          "author": "Seineseele",
+          "dur": 227,
+          "score": 34.35
+        },
+        {
+          "bvid": "BV1C3uz66EHJ",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《说爱你》- 蔡依林 -‘转啊转就真的遇见 Mr.Right’",
+          "author": "VV音乐局",
+          "dur": 227,
+          "score": 33.87
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "日不落",
+      "artist": "蔡依林",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1bp421Z78v",
+      "biliTitle": "日不落 - 蔡依林【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 229,
+      "playCount": 800883,
+      "sourceScore": 35.81,
+      "backupSources": [
+        {
+          "bvid": "BV11zwAzgELz",
+          "title": "【4K Hi-Res】日不落_蔡依林  你的青春里，有没有一首蔡依林？",
+          "author": "你去巴黎我在北京",
+          "dur": 227,
+          "score": 34.29
+        },
+        {
+          "bvid": "BV1rTSwBFEhp",
+          "title": "【SeedVR2超清修复】日不落-蔡依林【Hi-Res无损音质】",
+          "author": "小炳音乐",
+          "dur": 222,
+          "score": 33.26
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "倒带",
+      "artist": "蔡依林",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1ku4y1p7Mz",
+      "biliTitle": "【Hi-Res无损】蔡依林-倒带「终于看开爱回不来 而你总是太晚明白」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 265,
+      "playCount": 568566,
+      "sourceScore": 35.51,
+      "backupSources": [
+        {
+          "bvid": "BV1jpY1ehEAn",
+          "title": "【无损音乐】《倒带》—蔡依林",
+          "author": "KKang93-Music",
+          "dur": 263,
+          "score": 32.95
+        },
+        {
+          "bvid": "BV1U1tBzVEAM",
+          "title": "【4K Hi-Res】倒带-蔡依林",
+          "author": "如歌如梦",
+          "dur": 266,
+          "score": 32.09
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "月牙湾",
+      "artist": "飞儿乐团",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1R3411L7Qc",
+      "biliTitle": "【杜比音效】F.I.R.飞儿乐团《月牙湾》4K「是谁的心啊 孤单地留下 他还好吗 我多想爱他」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 309,
+      "playCount": 1899325,
+      "sourceScore": 36.56,
+      "backupSources": [
+        {
+          "bvid": "BV1N4411K76g",
+          "title": "【4K修复】F.I.R飞儿乐团 - 月牙湾 MV 2160P修复版",
+          "author": "zyl2012_音乐无限",
+          "dur": 313,
+          "score": 31.79
+        },
+        {
+          "bvid": "BV1V2pWeuEtg",
+          "title": "什么叫美轮美奂啊？月牙湾-F.I.R.【B站最高音质】（飞儿乐团）",
+          "author": "大杨_Jens",
+          "dur": 314,
+          "score": 21.15
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "我们的爱",
+      "artist": "飞儿乐团",
+      "category": "热歌与影视OST",
+      "mode": "ktv",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1CZ4y167wX",
+      "biliTitle": "【杜比音效】F.I.R.飞儿乐团《我们的爱》4K「我们的爱 过了就不再回来 直到现在 我还默默地等待」动态歌词",
+      "biliAuthor": "",
+      "durationSec": 288,
+      "playCount": 2082769,
+      "sourceScore": 36.64,
+      "backupSources": [
+        {
+          "bvid": "BV1di4y1i7Py",
+          "title": "F.I.R.飞儿乐团-我们的爱(无损音质4K60MV)[中文字幕]Hi-Res(FLAC24/48)",
+          "author": "",
+          "dur": 288,
+          "score": 34.76
+        },
+        {
+          "bvid": "BV1H1dkYBELZ",
+          "title": "我们的爱 - 飞儿乐团【真·Hi-Res无损音质】",
+          "author": "",
+          "dur": 288,
+          "score": 32.44
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "寂寞沙洲冷",
+      "artist": "周传雄",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1xeTuziEs4",
+      "biliTitle": "寂寞沙洲冷 - 周传雄【Hi-Res无损音质】寂寞沙洲我该思念谁💔",
+      "biliAuthor": "知己音乐",
+      "durationSec": 278,
+      "playCount": 44867,
+      "sourceScore": 33.3,
+      "backupSources": [
+        {
+          "bvid": "BV1xLm3BZEPB",
+          "title": "【4K Hi-Res】寂寞沙洲冷-周传雄",
+          "author": "如歌如梦",
+          "dur": 275,
+          "score": 32.11
+        },
+        {
+          "bvid": "BV1mA411T7SP",
+          "title": "【4K修复】周传雄-《寂寞沙洲冷》 喜欢这首彩铃吗？快拿起电话订购吧！",
+          "author": "时光集市",
+          "dur": 276,
+          "score": 31.62
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "黄昏",
+      "artist": "周传雄",
+      "category": "热歌与影视OST",
+      "mode": "ktv",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1MX4y1y7K9",
+      "biliTitle": "黄昏 - 周传雄【Hi-Res无损音质】",
+      "biliAuthor": "知己音乐",
+      "durationSec": 345,
+      "playCount": 160710,
+      "sourceScore": 34.41,
+      "backupSources": [
+        {
+          "bvid": "BV1RyGe6WE25",
+          "title": "【Hi-Res无损】周传雄-黄昏「依然记得从你眼中滑落的泪伤心欲绝 混乱中有种热泪烧伤的错觉」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 345,
+          "score": 33.64
+        },
+        {
+          "bvid": "BV1U5D1BKE3t",
+          "title": "周传雄《黄昏》完整版",
+          "author": "再听已是曲中人r",
+          "dur": 345,
+          "score": 32.29
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "那些年",
+      "artist": "胡夏",
+      "category": "热歌与影视OST",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "A",
+      "bvid": "BV12g4y1K7CA",
+      "biliTitle": "【Hi-Res无损】胡夏-那些年「那些年错过的大雨 那些年错过的爱情」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 372,
+      "playCount": 1023843,
+      "sourceScore": 36.02,
+      "backupSources": [
+        {
+          "bvid": "BV1S94y1F74r",
+          "title": "【Hi-Res无损音质】胡夏《那些年》好想再回到那些年的时光",
+          "author": "鱼吐泡泡の音悦台",
+          "dur": 367,
+          "score": 31.28
+        },
+        {
+          "bvid": "BV1FN4y1i7MP",
+          "title": "无损音质 胡夏《那些年》",
+          "author": "安子音乐屋",
+          "dur": 371,
+          "score": 30.96
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "大鱼",
+      "artist": "周深",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "notes": "周深天籁高音原调即契合少女音域",
+      "bvid": "BV1r3AWeeEbJ",
+      "biliTitle": "【无损音乐】《大鱼》—周深",
+      "biliAuthor": "KKang93-Music",
+      "durationSec": 312,
+      "playCount": 32752,
+      "sourceScore": 33.03,
+      "backupSources": [
+        {
+          "bvid": "BV1Xv411a7HM",
+          "title": "周深《大鱼》MTV-国语KTV完整版",
+          "author": "K歌工场",
+          "dur": 311,
+          "score": 32.72
+        },
+        {
+          "bvid": "BV1yJmGYvE17",
+          "title": "周深《大鱼》无损音质【Hi-Res】",
+          "author": "音乐灵魂伴侣",
+          "dur": 314,
+          "score": 31.08
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "小美满",
+      "artist": "周深",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1gJ4m1s7xc",
+      "biliTitle": "【Hi-Res无损】周深-小美满「你看 小狗在叫 树叶会笑 风声在呢喃」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 215,
+      "playCount": 395332,
+      "sourceScore": 35.19,
+      "backupSources": [
+        {
+          "bvid": "BV1fw4m1v7ut",
+          "title": "周深 - 小美满｜完整版 动态歌词LyricsVideo 无损音质",
+          "author": "真好听Realmusic",
+          "dur": 213,
+          "score": 33.56
+        },
+        {
+          "bvid": "BV1VppHz4E1L",
+          "title": "【4K Hi-Res】小美满-周深",
+          "author": "如歌如梦",
+          "dur": 215,
+          "score": 32.38
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "花开忘忧",
+      "artist": "周深",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1KB4y1j79L",
+      "biliTitle": "【周深】《花开忘忧》无损音质版",
+      "biliAuthor": "账号已注销",
+      "durationSec": 269,
+      "playCount": 283972,
+      "sourceScore": 34.91,
+      "backupSources": [
+        {
+          "bvid": "BV1d8411Y7fK",
+          "title": "【Hi-Res无损】周深-花开忘忧「我们苍老的时候 就回到小时候」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 253,
+          "score": 34.26
+        },
+        {
+          "bvid": "BV1Bb411o7QF",
+          "title": "花开忘忧-周深【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 253,
+          "score": 33.81
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "故梦",
+      "artist": "双笙",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1PH4y1d7um",
+      "biliTitle": "『4K60FPS Hi-Res无损 DESS HX修复 动态歌词』故梦~双笙★旧忆就像一扇窗 推开了就再难合上★",
+      "biliAuthor": "柒乐诗",
+      "durationSec": 285,
+      "playCount": 50211,
+      "sourceScore": 33.4,
+      "backupSources": [
+        {
+          "bvid": "BV1ns411m7cM",
+          "title": "【双笙】故梦",
+          "author": "双笙子",
+          "dur": 284,
+          "score": 22.96
+        },
+        {
+          "bvid": "BV1Qs411z7F8",
+          "title": "【双笙】故梦（一周年礼物）",
+          "author": "双笙子",
+          "dur": 288,
+          "score": 21.48
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "锦鲤抄",
+      "artist": "银临",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1L33R6CEEx",
+      "biliTitle": "【Hi-Res无损】银临/云之泣-锦鲤抄「你在尘世中辗转了千百年 却只让我看你最后一眼」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 246,
+      "playCount": 29961,
+      "sourceScore": 32.95,
+      "backupSources": [
+        {
+          "bvid": "BV1Af421z74q",
+          "title": "【无损纯享】银临&amp;云の泣《锦鲤抄》",
+          "author": "夢见夜曲",
+          "dur": 242,
+          "score": 32.18
+        },
+        {
+          "bvid": "BV1iW4y1Z7he",
+          "title": "【银临/云の泣｜锦鲤抄】银临/云の泣锦鲤抄 歌词版",
+          "author": "寄居蟹的小窝",
+          "dur": 246,
+          "score": 27.17
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "棠梨煎雪",
+      "artist": "银临",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV1FZ4y1S7F2",
+      "biliTitle": "【无损音质】银临-棠梨煎雪「依旧是偏爱枕惊鸿二字入梦的时节 烛火惺忪却可与她漫聊彻夜」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 246,
+      "playCount": 745912,
+      "sourceScore": 35.75,
+      "backupSources": [
+        {
+          "bvid": "BV1hZ421U7tw",
+          "title": "【无损】《棠梨煎雪》-银临|“依旧是偏爱枕惊鸿二字入梦的时节 烛火惺忪却可与她漫聊彻夜”",
+          "author": "果冻糖布丁",
+          "dur": 240,
+          "score": 34.73
+        },
+        {
+          "bvid": "BV1gaB1BkEda",
+          "title": "【4K Hi-Res】棠梨煎雪-银临",
+          "author": "如歌如梦",
+          "dur": 246,
+          "score": 31.28
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "辞九门回忆",
+      "artist": "等什么君",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1CxeBzUEqF",
+      "biliTitle": "【Hi-Res无损】《辞九门回忆-邓寓君(等什么君)》|“百听不厌的古风歌曲/钱是英雄胆：戏子多秋 可怜一处情深旧”|动态歌词",
+      "biliAuthor": "浮笙音乐馆",
+      "durationSec": 241,
+      "playCount": 3528239,
+      "sourceScore": 37.1,
+      "backupSources": [
+        {
+          "bvid": "BV1Ns4y167AA",
+          "title": "【无损音质】辞九门回忆- 等什么君「戏子多秋  可怜一处情深旧  满座衣冠皆老朽  黄泉故事无止休」",
+          "author": "星夜丶忆梦",
+          "dur": 241,
+          "score": 35.91
+        },
+        {
+          "bvid": "BV1RnyqBzEK2",
+          "title": "【4K Hi-Res】辞九门回忆_等什么君  只叹戏子多秋啊！！可怜一处情深旧 换过一折又重头",
+          "author": "你去巴黎我在北京",
+          "dur": 241,
+          "score": 33.33
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "九万字",
+      "artist": "黄诗扶",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1Wy421v7ih",
+      "biliTitle": "【无损音质】九万字-黄诗扶“我也算万种风情实非良人 谁能有幸错付终身~”",
+      "biliAuthor": "遥远与晴music",
+      "durationSec": 233,
+      "playCount": 1096045,
+      "sourceScore": 36.08,
+      "backupSources": [
+        {
+          "bvid": "BV17BErzVENP",
+          "title": "【Hi-Res无损】黄诗扶《九万字》百听不厌的古风歌曲「我也算万种风情 实非良人 谁能有幸 错付终身」【歌词/Lyrics】",
+          "author": "一只爱听歌的梨",
+          "dur": 233,
+          "score": 35.23
+        },
+        {
+          "bvid": "BV1xRJFz5E7w",
+          "title": "【Hi-Res无损】黄诗扶-九万字「我也算万种风情 实非良人 谁能有幸 错付终身」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 233,
+          "score": 34.67
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "勾指起誓",
+      "artist": "泠鸢yousa",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV141YH6oEU6",
+      "biliTitle": "勾指起誓 - 泠鸢yousa - vrc-karaoke",
+      "biliAuthor": "psenY7",
+      "durationSec": 187,
+      "playCount": 189,
+      "sourceScore": 16.55,
+      "backupSources": [
+        {
+          "bvid": "BV1gb411n7fR",
+          "title": "【KBShinya】勾指起誓 单身狗听完会哭的一首歌",
+          "author": "KBShinya",
+          "dur": 184,
+          "score": 11.26
+        },
+        {
+          "bvid": "BV1ab411q7yE",
+          "title": "【泠鸢＆洛少爷】如此契合的双声道《勾指起誓》你听过没？",
+          "author": "鸟憨的窝窝头pop",
+          "dur": 182,
+          "score": 10.84
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "东京不太热",
+      "artist": "封茗囧菌",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV14Z9MYyE7k",
+      "biliTitle": "封茗囧菌 I 东京不太热完整版纯享！",
+      "biliAuthor": "车梨子i",
+      "durationSec": 225,
+      "playCount": 129710,
+      "sourceScore": 32.23,
+      "backupSources": [
+        {
+          "bvid": "BV1rnv8eeET5",
+          "title": "封茗囧菌《东京不太热》4k无损",
+          "author": "故发",
+          "dur": 226,
+          "score": 30.47
+        },
+        {
+          "bvid": "BV1CF41117mV",
+          "title": "《东京不太热》-封茗囧菌｜“直到有一天看到她和别人在一起”",
+          "author": "泰坦之路AzHb代肝",
+          "dur": 226,
+          "score": 22.87
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "芒种",
+      "artist": "音阙诗听",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "notes": "赵方婧女声主唱极甜",
+      "bvid": "BV1qY411S7kA",
+      "biliTitle": "《芒种》音阙诗听&amp;赵方婧【Hi-Res无损音质】",
+      "biliAuthor": "TuneDrop",
+      "durationSec": 217,
+      "playCount": 24903,
+      "sourceScore": 32.79,
+      "backupSources": [
+        {
+          "bvid": "BV1a841137Jz",
+          "title": "音阙诗听二十四节气歌之《芒种》",
+          "author": "-桃李醉春风-",
+          "dur": 218,
+          "score": 18.63
+        },
+        {
+          "bvid": "BV1NE411h77f",
+          "title": "音阙诗听 X 赵方婧 - 芒种《DJ细文 文凯出品》",
+          "author": "文瑛乌托邦",
+          "dur": 374,
+          "score": 16.36
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "赤伶",
+      "artist": "HITA",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1fN4y1o74f",
+      "biliTitle": "【Hi-Res无损】HITA《赤伶》台下人走过 不见旧颜色，台上人唱着 心碎离别歌。",
+      "biliAuthor": "烟火音乐馆",
+      "durationSec": 267,
+      "playCount": 423109,
+      "sourceScore": 35.25,
+      "backupSources": [
+        {
+          "bvid": "BV1vj411e7ev",
+          "title": "【完整版】HITA-赤伶架子鼓动态鼓谱 -318鼓谱",
+          "author": "318鼓谱",
+          "dur": 266,
+          "score": 31.14
+        },
+        {
+          "bvid": "BV1eBBXYGE6v",
+          "title": "原唱《赤伶》完整MV来了，HITA经典吟唱再现，绝美戏腔感动人心！",
+          "author": "小巴音乐之家",
+          "dur": 262,
+          "score": 28.57
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "盗将行",
+      "artist": "花粥",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1sK421v7Te",
+      "biliTitle": "【Hi-Res无损】花粥、马雨阳《盗将行》你还记得这首曾经火爆全网的古风歌吗？歌词纯享版「枕风宿雪多年  我与虎谋早餐  拎着钓叟的鱼弦  问卧龙几两钱」",
+      "biliAuthor": "一只爱听歌的梨",
+      "durationSec": 199,
+      "playCount": 2253512,
+      "sourceScore": 36.71,
+      "backupSources": [
+        {
+          "bvid": "BV1ys8R6zEDQ",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《盗将行》- 花粥,马雨阳 -‘不知何人浅唱弄弦  我彷徨不可前’",
+          "author": "VV音乐局",
+          "dur": 199,
+          "score": 33.45
+        },
+        {
+          "bvid": "BV1Ty4y1B7Bm",
+          "title": "【钢琴改编】《盗将行》唯美高度还原（花粥,马雨阳）",
+          "author": "Cuppix_",
+          "dur": 197,
+          "score": 20.85
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "春庭雪",
+      "artist": "等什么君",
+      "category": "国风与二次元",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1nt421N7Xt",
+      "biliTitle": "【Hi-Res无损】等什么君《春庭雪》百听不厌的古风歌曲｜歌词纯享版「这一世 太漫长却止步咫尺天涯间 谁仍记 那梨花若雪时节」",
+      "biliAuthor": "一只爱听歌的梨",
+      "durationSec": 241,
+      "playCount": 2106690,
+      "sourceScore": 36.65,
+      "backupSources": [
+        {
+          "bvid": "BV1XohAzfEQH",
+          "title": "【Hi-Res无损】邓寓君(等什么君)-春庭雪「这一世 太漫长却止步咫尺天涯间」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 241,
+          "score": 34.64
+        },
+        {
+          "bvid": "BV1bPJrz8ERX",
+          "title": "春庭雪-邓寓君（等什么君）",
+          "author": "向着太阳光照耀人生",
+          "dur": 241,
+          "score": 19.66
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "晴天",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1U44y1G7a6",
+      "biliTitle": "【杜比音效】周杰伦《晴天》4K「刮风这天我试过握着你手 但偏偏雨渐渐大到我看你不见」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 270,
+      "playCount": 7988669,
+      "sourceScore": 37.8,
+      "backupSources": [
+        {
+          "bvid": "BV1BZbSzZEGT",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《晴天》- 周杰伦 -‘故事的小黄花’",
+          "author": "VV音乐局",
+          "dur": 270,
+          "score": 37.11
+        },
+        {
+          "bvid": "BV1j2EX64E5S",
+          "title": "【真.4K重制】周杰伦《晴天》MV HiRes无损音质 爷青回！",
+          "author": "唯一8090",
+          "dur": 318,
+          "score": 34.63
+        }
+      ],
+      "qaStatus": "rejected",
+      "qaNote": "避坑已剔除：周杰伦原唱处于221Hz中高男声夹心带且含混咬字，首版pitch=0偏沉闷且吃掉「童年的」+尾句截半；重跑锁「故事的小黄花」配pitch=+12虽起止干净但明显偏尖细花栗鼠感。结论：男声直转优选<172Hz低音男声(如《像鱼》)或改用清亮女声翻唱源",
+      "qaBatch": 1,
+      "qaScore": 5.8,
+      "qaMode": "bedroom_bgm",
+      "cacheId": null,
+      "renderedDurSec": 38.4,
+      "pitchChange": 12,
+      "hnrDb": 19.2,
+      "attempts": 2,
+      "replicateCalls": 4,
+      "qaAt": "2026-11-23T05:01:13.181Z"
+    },
+    {
+      "song": "七里香",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV17S4y1e7eG",
+      "biliTitle": "【杜比音效】周杰伦《七里香》4K「雨下整夜我的爱溢出就像雨水」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 297,
+      "playCount": 3585558,
+      "sourceScore": 37.11,
+      "backupSources": [
+        {
+          "bvid": "BV1Fw86zuEZE",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《七里香》- 周杰伦 -‘秋刀鱼的滋味猫跟你都想了解’",
+          "author": "VV音乐局",
+          "dur": 300,
+          "score": 36.18
+        },
+        {
+          "bvid": "BV1tx42197cf",
+          "title": "【4K Hi-Res】七里香-周杰伦   你出现在我诗的每一页",
+          "author": "你去巴黎我在北京",
+          "dur": 299,
+          "score": 35.72
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "稻香",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1zu41167dZ",
+      "biliTitle": "【杜比音效】周杰伦《稻香》「还记得你说家是唯一的城堡 随着稻香河流继续奔跑」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 224,
+      "playCount": 1916968,
+      "sourceScore": 36.57,
+      "backupSources": [
+        {
+          "bvid": "BV1Qyt6zQEG9",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《稻香》- 周杰伦 -‘还记得你说家是唯一的城堡’",
+          "author": "VV音乐局",
+          "dur": 224,
+          "score": 36.14
+        },
+        {
+          "bvid": "BV1RMGKzsEEf",
+          "title": "【4K Hi-Res】稻香-周杰伦",
+          "author": "如歌如梦",
+          "dur": 224,
+          "score": 35.48
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "告白气球",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1tqwUzuEK7",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《告白气球》- 周杰伦 -‘𝙈𝙑视听’",
+      "biliAuthor": "歌威贵_grey",
+      "durationSec": 216,
+      "playCount": 20046,
+      "sourceScore": 32.6,
+      "backupSources": [
+        {
+          "bvid": "BV1ionN6wE8D",
+          "title": "【4K Hi-Res】告白气球-周杰伦",
+          "author": "如歌如梦",
+          "dur": 216,
+          "score": 32.32
+        },
+        {
+          "bvid": "BV1mL411E7Fb",
+          "title": "【4K60FPS】周杰伦《告白气球》超甜神曲！祝大家七夕快乐！",
+          "author": "音乐私藏馆",
+          "dur": 211,
+          "score": 31.63
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "青花瓷",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV12F411A7ai",
+      "biliTitle": "【杜比音效】周杰伦《青花瓷》「天青色等烟雨 而我在等你」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 238,
+      "playCount": 2093457,
+      "sourceScore": 36.64,
+      "backupSources": [
+        {
+          "bvid": "BV1nw86zuE9T",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《青花瓷》- 周杰伦 -‘天青色等烟雨 而我在等你’",
+          "author": "VV音乐局",
+          "dur": 240,
+          "score": 36.58
+        },
+        {
+          "bvid": "BV1cEunzPEum",
+          "title": "【4K Hi-Res】青花瓷-周杰伦",
+          "author": "如歌如梦",
+          "dur": 240,
+          "score": 35.69
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "蒲公英的约定",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1YD4y1t7ch",
+      "biliTitle": "【4K·B站首发丨HiRes顶级音质】周杰伦《蒲公英的约定》真MV·重制修复~~~",
+      "biliAuthor": "唯一8090",
+      "durationSec": 249,
+      "playCount": 2817242,
+      "sourceScore": 36.9,
+      "backupSources": [
+        {
+          "bvid": "BV1As4y1i7MP",
+          "title": "【4K Hi-Res】蒲公英的约定-周杰伦 我分不清这是有情还是爱情",
+          "author": "你去巴黎我在北京",
+          "dur": 247,
+          "score": 35.7
+        },
+        {
+          "bvid": "BV17Tu66AEwT",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬·无损音质】《蒲公英的约定》-周杰伦-“而我已经分不清，你是友情，还是错过的爱情”",
+          "author": "维登音乐",
+          "dur": 248,
+          "score": 34.54
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "简单爱",
+      "artist": "周杰伦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1PZgP6jEwx",
+      "biliTitle": "【真.4K重制】周杰伦《简单爱》MV 我想就这样牵着你的手不放开... ...HiRes无损音质 爷青回！",
+      "biliAuthor": "唯一8090",
+      "durationSec": 269,
+      "playCount": 184753,
+      "sourceScore": 34.53,
+      "backupSources": [
+        {
+          "bvid": "BV1Efta6cEnQ",
+          "title": "【4K Hi-Res】简单爱-周杰伦",
+          "author": "如歌如梦",
+          "dur": 271,
+          "score": 34.11
+        },
+        {
+          "bvid": "BV1kt411A7mK",
+          "title": "【4K修复】周杰伦《简单爱》MV 「我想就这样牵着你的手不放开」",
+          "author": "zyl2012_音乐无限",
+          "dur": 269,
+          "score": 31.15
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "江南",
+      "artist": "林俊杰",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1Fi4y1e7Gg",
+      "biliTitle": "【4K Hi-Res】江南-林俊杰    相信爱一天 抵过永远",
+      "biliAuthor": "你去巴黎我在北京",
+      "durationSec": 269,
+      "playCount": 505194,
+      "sourceScore": 35.41,
+      "backupSources": [
+        {
+          "bvid": "BV1CVgBzWEWM",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《江南》- 林俊杰 -‘当梦被埋在江南烟雨中  心碎了才懂’",
+          "author": "VV音乐局",
+          "dur": 268,
+          "score": 34.24
+        },
+        {
+          "bvid": "BV1N18qzGEQF",
+          "title": "【4K Hi-Res】江南-林俊杰",
+          "author": "如歌如梦",
+          "dur": 268,
+          "score": 33.76
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "修炼爱情",
+      "artist": "林俊杰",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV14t4y1t7G5",
+      "biliTitle": "【杜比音效】林俊杰-修炼爱情「修炼爱情的心酸 学会放好以前的渴望」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 288,
+      "playCount": 1788747,
+      "sourceScore": 36.51,
+      "backupSources": [
+        {
+          "bvid": "BV1G441157XW",
+          "title": "【高画质】修炼爱情 - 林俊杰 完整版MV",
+          "author": "麻吉赖子农夫",
+          "dur": 354,
+          "score": 33.46
+        },
+        {
+          "bvid": "BV14p411f7Ym",
+          "title": "【MV】林俊杰 《修炼爱情》 FHD高音质",
+          "author": "TravellerK",
+          "dur": 317,
+          "score": 23.71
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "可惜没如果",
+      "artist": "林俊杰",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1KG4y167FX",
+      "biliTitle": "【Hi-Res无损】林俊杰《可惜没如果》「倘若那天 把该说的话好好说」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 299,
+      "playCount": 2179516,
+      "sourceScore": 36.68,
+      "backupSources": [
+        {
+          "bvid": "BV1Ey41187VK",
+          "title": "【4K 无损音质】 林俊杰《可惜没如果》“全都怪我 不该沉默时沉默 该勇敢时软弱”",
+          "author": "一梦岚裳",
+          "dur": 299,
+          "score": 34.2
+        },
+        {
+          "bvid": "BV1ZV4y167DS",
+          "title": "【4K Hi-Res】可惜没如果-林俊杰 假如把犯得起的错都错过该多好",
+          "author": "你去巴黎我在北京",
+          "dur": 298,
+          "score": 34.11
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "十年",
+      "artist": "陈奕迅",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1Fu4m1M7f5",
+      "biliTitle": "【无损Hi-Res】陈奕迅《十年》“十年之前，我不认识你，你不属于我”-4K",
+      "biliAuthor": "上岸音乐馆",
+      "durationSec": 206,
+      "playCount": 134770,
+      "sourceScore": 34.26,
+      "backupSources": [
+        {
+          "bvid": "BV13ouJzEECN",
+          "title": "陈奕迅 - 十年【Hi-Res无损音质】转瞬间，年轮已绕了十圈",
+          "author": "知己音乐",
+          "dur": 206,
+          "score": 34.13
+        },
+        {
+          "bvid": "BV1dd4y167VT",
+          "title": "【无损音质】十年-陈奕迅「十年之前 我不认识你 你不属于我」",
+          "author": "星夜丶忆梦",
+          "dur": 206,
+          "score": 33.75
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "好久不见",
+      "artist": "陈奕迅",
+      "category": "清亮男声独唱",
+      "mode": "acappella",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1A9dUY4E5s",
+      "biliTitle": "4K珍藏 陈奕迅《好久不见》",
+      "biliAuthor": "4K音乐珍藏",
+      "durationSec": 246,
+      "playCount": 2791,
+      "sourceScore": 24.89,
+      "backupSources": [
+        {
+          "bvid": "BV1kf4y1s71G",
+          "title": "【钢琴】陈奕迅《好久不见》罗曼耶卓",
+          "author": "oskarpianist",
+          "dur": 322,
+          "score": 22.99
+        },
+        {
+          "bvid": "BV1E7411575c",
+          "title": "【高清修复】陈奕迅 - 好久不见 [原版MV]",
+          "author": "时光音乐阁",
+          "dur": 248,
+          "score": 22.76
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "富士山下",
+      "artist": "陈奕迅",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1u8zzYPEsb",
+      "biliTitle": "【无损音质】《富士山下》-陈奕迅“谁能凭爱意要富士山私有”",
+      "biliAuthor": "没礼貌吖",
+      "durationSec": 260,
+      "playCount": 1229560,
+      "sourceScore": 36.18,
+      "backupSources": [
+        {
+          "bvid": "BV1wp42117eD",
+          "title": "【Hi-Res无损】陈奕迅-富士山下「谁都只得那双手 靠拥抱亦难任你拥有」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 260,
+          "score": 35.23
+        },
+        {
+          "bvid": "BV19yKKzMEr2",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《富士山下》- 陈奕迅 -‘谁能凭爱意要富士山私有’",
+          "author": "VV音乐局",
+          "dur": 260,
+          "score": 33.48
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "演员",
+      "artist": "薛之谦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1QxcKzXEjm",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《演员》- 薛之谦 -‘别逼一个最爱你的人即兴表演’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 262,
+      "playCount": 87426,
+      "sourceScore": 33.88,
+      "backupSources": [
+        {
+          "bvid": "BV12iWjzKEJb",
+          "title": "【4K Hi-Res】演员-薛之谦",
+          "author": "如歌如梦",
+          "dur": 262,
+          "score": 32.85
+        },
+        {
+          "bvid": "BV1Jh411L74n",
+          "title": "【Hi-Res】薛之谦-《演员》｜你难过的太表面，像没天赋的演员、",
+          "author": "熊猫先生-1979",
+          "dur": 262,
+          "score": 32.84
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "认真的雪",
+      "artist": "薛之谦",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1be4y1h7EG",
+      "biliTitle": "【Hi-Res无损】薛之谦《认真的雪》「雪下得那么深 下得那么认真」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 262,
+      "playCount": 649643,
+      "sourceScore": 35.63,
+      "backupSources": [
+        {
+          "bvid": "BV19MkjBgEzH",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《认真的雪》- 薛之谦 -‘已经十几年没下雪的上海突然飘雪’",
+          "author": "VV音乐局",
+          "dur": 256,
+          "score": 33.85
+        },
+        {
+          "bvid": "BV1GxnnzUEkm",
+          "title": "【4K Hi-Res】认真的雪-薛之谦",
+          "author": "如歌如梦",
+          "dur": 260,
+          "score": 32.36
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "消愁",
+      "artist": "毛不易",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1f64y147wV",
+      "biliTitle": "【无损音质】毛不易-消愁「一杯敬故乡 一杯敬远方 守着我的善良 催着我成长」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 262,
+      "playCount": 2206634,
+      "sourceScore": 36.69,
+      "backupSources": [
+        {
+          "bvid": "BV1T3JnzNEpp",
+          "title": "【4K60FPS Hi-Res】毛不易《消愁》动态歌词MV修复 | 一杯敬我爹，一杯敬我娘，曾是他们的希望，如今活成这球样……",
+          "author": "刘氏博物馆",
+          "dur": 262,
+          "score": 33.92
+        },
+        {
+          "bvid": "BV19b4y1R7Hu",
+          "title": "毛不易《消愁》MTV-国语KTV完整版",
+          "author": "K歌工场",
+          "dur": 163,
+          "score": 31.47
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "像我这样的人",
+      "artist": "毛不易",
+      "category": "清亮男声独唱",
+      "mode": "acappella",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV17Y411N7yT",
+      "biliTitle": "【杜比音效】毛不易-像我这样的人「像我这样碌碌无为的人 你还见过多少人」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 208,
+      "playCount": 948979,
+      "sourceScore": 35.95,
+      "backupSources": [
+        {
+          "bvid": "BV17b421e7oS",
+          "title": "像我这样的人 - 毛不易【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 208,
+          "score": 33.85
+        },
+        {
+          "bvid": "BV17s411P7DL",
+          "title": "毛不易——《像我这样的人》官方MV发布",
+          "author": "舒服是留给美女的",
+          "dur": 219,
+          "score": 33.45
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "平凡的一天",
+      "artist": "毛不易",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1L54y1N73C",
+      "biliTitle": "平凡的一天 - 毛不易 -【Hi-Res无损音质】-温柔的声音",
+      "biliAuthor": "知己音乐",
+      "durationSec": 277,
+      "playCount": 697705,
+      "sourceScore": 35.69,
+      "backupSources": [
+        {
+          "bvid": "BV1Tf4y1X71m",
+          "title": "毛不易《平凡的一天》官方完整版",
+          "author": "SC1899",
+          "dur": 299,
+          "score": 35.58
+        },
+        {
+          "bvid": "BV1w6hqzzEr2",
+          "title": "【4K Hi-Res】平凡的一天 - 毛不易 这是最平凡的一天啊 你也想念吗",
+          "author": "园游会吧",
+          "dur": 277,
+          "score": 33.36
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "有何不可",
+      "artist": "许嵩",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV15W4y177BT",
+      "biliTitle": "【Hi-Res无损】许嵩-有何不可「为你唱这首歌 没有什么风格 它仅仅代表着 我希望你快乐」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 242,
+      "playCount": 687337,
+      "sourceScore": 35.67,
+      "backupSources": [
+        {
+          "bvid": "BV1Tc411F7GJ",
+          "title": "许嵩-《有何不可》——完整版",
+          "author": "汽水薯条可乐",
+          "dur": 239,
+          "score": 34.57
+        },
+        {
+          "bvid": "BV1cLkrYAEmF",
+          "title": "【4K Hi-Res】有何不可-许嵩   为你唱这首歌 它仅仅代表着  我希望你快乐",
+          "author": "你去巴黎我在北京",
+          "dur": 243,
+          "score": 34.19
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "清明雨上",
+      "artist": "许嵩",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1114y1U7W5",
+      "biliTitle": "【无损音乐】太搭配 许嵩《清明雨上》遇上《中国唱诗班》的《红豆》",
+      "biliAuthor": "哈哈中国2019",
+      "durationSec": 220,
+      "playCount": 12216,
+      "sourceScore": 32.17,
+      "backupSources": [
+        {
+          "bvid": "BV1rPczeqEwa",
+          "title": "许嵩《清明雨上》“我在人间彷徨，寻不到你的天堂，东瓶西镜放，恨不能遗忘”-【Hi-Res无损】",
+          "author": "上岸音乐馆",
+          "dur": 221,
+          "score": 32.17
+        },
+        {
+          "bvid": "BV1bi5i6sE8p",
+          "title": "【Hi-Res无损音质】许嵩《清明雨上》这首歌曲这么好听！百万黑胶的版本4K60P 经典",
+          "author": "造梦可汗",
+          "dur": 219,
+          "score": 31.88
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "断桥残雪",
+      "artist": "许嵩",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1n3411q797",
+      "biliTitle": "【无损音质】许嵩-断桥残雪「断桥是否下过雪 又想起你的脸」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 228,
+      "playCount": 726138,
+      "sourceScore": 35.72,
+      "backupSources": [
+        {
+          "bvid": "BV1CwaizzExX",
+          "title": "【4K Hi-Res】断桥残雪-许嵩",
+          "author": "如歌如梦",
+          "dur": 228,
+          "score": 32.2
+        },
+        {
+          "bvid": "BV1Qt4y1f7G2",
+          "title": "许嵩-断桥残雪（Hi-Res音质纯享 戴好耳机来听歌吧）",
+          "author": "ヘ九亿少女梦",
+          "dur": 228,
+          "score": 28.45
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "万有引力",
+      "artist": "汪苏泷",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1iz4y1L7U1",
+      "biliTitle": "【Hi-Res无损】汪苏泷《万有引力》“我们的爱情是丘比特安排的游戏  还是月下老人他傻傻分不清”| 音乐可视化 | 动态歌词",
+      "biliAuthor": "Music小铁匠",
+      "durationSec": 246,
+      "playCount": 891330,
+      "sourceScore": 35.9,
+      "backupSources": [
+        {
+          "bvid": "BV1we4y127Yx",
+          "title": "【4K·纯享】汪苏泷 《万有引力》动态音乐 [牛顿说过有种东西叫万有引力  我因为你开始相信那些大道理……]",
+          "author": "音乐点播员华生",
+          "dur": 250,
+          "score": 33.82
+        },
+        {
+          "bvid": "BV15YFXewEno",
+          "title": "万有引力 - 汪苏泷【真·Hi-Res无损音质】",
+          "author": "道不出当时年少",
+          "dur": 237,
+          "score": 29.86
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "年少有为",
+      "artist": "李荣浩",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1ih411q75f",
+      "biliTitle": "【无损音质】李荣浩-年少有为「假如我年少有为不自卑 懂得什么是珍贵」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 280,
+      "playCount": 546683,
+      "sourceScore": 35.48,
+      "backupSources": [
+        {
+          "bvid": "BV1pBYmzBEP5",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《年少有为》- 李荣浩 -‘假如我年少有为不自卑  懂得什么是珍贵’",
+          "author": "VV音乐局",
+          "dur": 280,
+          "score": 34.87
+        },
+        {
+          "bvid": "BV1CA411D7cQ",
+          "title": "【无损】李荣浩《年少有为》“假如我年少有为 不自卑 懂得什么是珍贵 那些美梦 没给你 我一生有愧”| 音乐可视化 | 动态歌词",
+          "author": "Music小铁匠",
+          "dur": 280,
+          "score": 34.53
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "乌梅子酱",
+      "artist": "李荣浩",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1Uv4y1W7ou",
+      "biliTitle": "【Hi-Res无损】李荣浩-乌梅子酱「你浅浅的微笑就像 乌梅子酱 我尝了你嘴角唇膏 薄荷味道」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 258,
+      "playCount": 325699,
+      "sourceScore": 35.03,
+      "backupSources": [
+        {
+          "bvid": "BV1Sg4y1J73j",
+          "title": "乌梅子酱-李荣浩 -【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 258,
+          "score": 34.03
+        },
+        {
+          "bvid": "BV1PR4y1q7JB",
+          "title": "【sky光遇】光遇琴谱 乌梅子酱 李荣浩 完整版高度还原 语瞳原创sky studio",
+          "author": "Sky光遇琴谱_瞳",
+          "dur": 231,
+          "score": 30.53
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "成都",
+      "artist": "赵雷",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "S",
+      "bvid": "BV1SJ4m187wx",
+      "biliTitle": "【Hi-Res无损】赵雷-成都「和我在成都的街头走一走」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 329,
+      "playCount": 319431,
+      "sourceScore": 35.01,
+      "backupSources": [
+        {
+          "bvid": "BV1Nh4y1q7d7",
+          "title": "【4K Hi-Res】成都-赵雷   余路 请你攥着我的手",
+          "author": "你去巴黎我在北京",
+          "dur": 329,
+          "score": 34.48
+        },
+        {
+          "bvid": "BV1aoNteTEVG",
+          "title": "【无损音乐】《成都》—赵雷",
+          "author": "KKang93-Music",
+          "dur": 275,
+          "score": 33.29
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "水星记",
+      "artist": "郭顶",
+      "category": "清亮男声独唱",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "S",
+      "bvid": "BV1wyCKBfEwC",
+      "biliTitle": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《水星记》-郭顶 -‘还要多远才能进入你的心’",
+      "biliAuthor": "VV音乐局",
+      "durationSec": 326,
+      "playCount": 234600,
+      "sourceScore": 34.74,
+      "backupSources": [
+        {
+          "bvid": "BV1bv4y1H7UW",
+          "title": "水星记-郭顶【Hi-Res无损音质】",
+          "author": "知己音乐",
+          "dur": 326,
+          "score": 34.39
+        },
+        {
+          "bvid": "BV156V6zsEyi",
+          "title": "郭顶《水星记》“还要多远才能进入你的心，还要多久才能和你接近”-【Hi-Res无损】",
+          "author": "上岸音乐馆",
+          "dur": 326,
+          "score": 33.2
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "给你一瓶魔法药水",
+      "artist": "告五人",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "S",
+      "bvid": "BV12o4y1p7EW",
+      "biliTitle": "【4K Hi-Res】给你一瓶魔法药水-告五人 有你在 就不需要魔法",
+      "biliAuthor": "你去巴黎我在北京",
+      "durationSec": 259,
+      "playCount": 334940,
+      "sourceScore": 35.05,
+      "backupSources": [
+        {
+          "bvid": "BV1je4y1d7GV",
+          "title": "动态歌词排版 | 给你一瓶魔法药水 | 告五人",
+          "author": "猫猫头流眼泪",
+          "dur": 259,
+          "score": 33.56
+        },
+        {
+          "bvid": "BV1fS4y1t7Wz",
+          "title": "动态歌词排版｜给你一瓶魔法药水–告五人:宇宙的有趣，我都不在意",
+          "author": "有山雾的秋",
+          "dur": 259,
+          "score": 31.51
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "爱人错过",
+      "artist": "告五人",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "female_orig",
+      "suitability": "A",
+      "bvid": "BV1bP411V7EY",
+      "biliTitle": "【4Khires】告五人《爱人错过》mv珍藏版 开车不适合听的音乐 “相撞在街口” 无损音质",
+      "biliAuthor": "晚间音乐社c",
+      "durationSec": 313,
+      "playCount": 4574274,
+      "sourceScore": 37.32,
+      "backupSources": [
+        {
+          "bvid": "BV1jG4y1E79Y",
+          "title": "【Hi-Res无损】告五人-爱人错过「我肯定在几百年前就说过爱你 只是你忘了」动态歌词",
+          "author": "索性自挂东南枝",
+          "dur": 293,
+          "score": 36.83
+        },
+        {
+          "bvid": "BV1Np4y1d7fs",
+          "title": "纯人声 告五人《爱人错过》【无损音质】",
+          "author": "我爱吃派大星",
+          "dur": 207,
+          "score": 31.57
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "漠河舞厅",
+      "artist": "柳爽",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1m1421i7hW",
+      "biliTitle": "漠河舞厅-柳爽 自制字幕 无损音源",
+      "biliAuthor": "小炳音乐",
+      "durationSec": 276,
+      "playCount": 13204,
+      "sourceScore": 32.24,
+      "backupSources": [
+        {
+          "bvid": "BV1chJw6bEBb",
+          "title": "柳爽《漠河舞厅》｜动态曲谱 完整版滚动简谱 带歌词跟练",
+          "author": "动态曲谱和猫",
+          "dur": 300,
+          "score": 30.6
+        },
+        {
+          "bvid": "BV1KTf1BnEyB",
+          "title": "戴羽彤《漠河舞厅》无损音质完整版饭制MV,歌曲背后的故事，感动多少人",
+          "author": "小棉袄音乐",
+          "dur": 214,
+          "score": 21.69
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "晚安",
+      "artist": "颜人中",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1wb4y1K74M",
+      "biliTitle": "【无损音质】《晚安》-颜人中“曾经多少个牵肠拉扯不舍夜晚 到现在热情褪成陌路的感叹~”",
+      "biliAuthor": "遥远与晴music",
+      "durationSec": 290,
+      "playCount": 1586827,
+      "sourceScore": 36.4,
+      "backupSources": [
+        {
+          "bvid": "BV1ZrubzJEci",
+          "title": "【𝐇𝐢-𝐑𝐞𝐬无损音质】｜《晚安》- 颜人中 -‘迂回一句晚安 多情人却自找难堪’",
+          "author": "VV音乐局",
+          "dur": 290,
+          "score": 36.34
+        },
+        {
+          "bvid": "BV1yy421b7ZC",
+          "title": "何必拿真心与寂寞去纠缠— 颜人中-《晚安》（完整版）",
+          "author": "别在雾里找我",
+          "dur": 290,
+          "score": 34.82
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "嘉宾",
+      "artist": "张远",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_high_orig",
+      "suitability": "A",
+      "bvid": "BV1e72zYoEqu",
+      "biliTitle": "【Hi-Res无损】张远-嘉宾「感谢你特别邀请 来见证你的爱情」动态歌词",
+      "biliAuthor": "索性自挂东南枝",
+      "durationSec": 334,
+      "playCount": 586877,
+      "sourceScore": 35.54,
+      "backupSources": [
+        {
+          "bvid": "BV1NXxxzPEH7",
+          "title": "【Hi-Res】《嘉宾》-张远“感谢你特别邀请 来见证你的爱情 我时刻提醒自己 别逃避”",
+          "author": "小李音乐铺",
+          "dur": 334,
+          "score": 34.56
+        },
+        {
+          "bvid": "BV1t94y1W7n9",
+          "title": "张远|《嘉宾》动态歌词排版/适合近现代BE、释怀",
+          "author": "轩啊靖啊",
+          "dur": 331,
+          "score": 31.37
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    },
+    {
+      "song": "春风十里",
+      "artist": "鹿先森乐队",
+      "category": "热歌与独立轻抒情",
+      "mode": "bedroom_bgm",
+      "vocalType": "male_octave_up",
+      "suitability": "A",
+      "bvid": "BV1sMoRYLEdd",
+      "biliTitle": "【Hi-Res无损音质】鹿先森乐队《春风十里》首歌原来这么好听 ！ 经典歌曲最好听的版本 4K60P",
+      "biliAuthor": "造梦可汗",
+      "durationSec": 368,
+      "playCount": 52453,
+      "sourceScore": 33.44,
+      "backupSources": [
+        {
+          "bvid": "BV1Wv4y1i7ui",
+          "title": "上乐夏被黑最惨乐队  鹿先森乐队《春风十里》大家喜欢吗",
+          "author": "尖耳朵阿凡达兔兔",
+          "dur": 397,
+          "score": 20.74
+        },
+        {
+          "bvid": "BV18t4y12783",
+          "title": "春风十里 鹿先森乐队 动态鼓谱",
+          "author": "看哦爱随风原创鼓谱",
+          "dur": 377,
+          "score": 19.9
+        }
+      ],
+      "qaStatus": "unrendered",
+      "qaNote": ""
+    }
+  ],
+  "qaSummary": {
+    "batch1Attempted": 8,
+    "batch1Passed": 6,
+    "batch1Rejected": 2,
+    "existingProtected": 3,
+    "totalCachedSongsDistinct": 9,
+    "totalCachedAudioVariants": 11,
+    "estimatedReplicateCalls": 26,
+    "estimatedCostUsd": "0.55-0.95",
+    "nextBatchTop12": [
+      {
+        "song": "年轮",
+        "artist": "张碧晨",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1F341197ER",
+        "playCount": 6332493
+      },
+      {
+        "song": "明天你好",
+        "artist": "牛奶咖啡",
+        "category": "治愈民谣女声",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1m64y1k7rQ",
+        "playCount": 5246937
+      },
+      {
+        "song": "追光者",
+        "artist": "岑宁儿",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1kS4y1w73t",
+        "playCount": 4035863
+      },
+      {
+        "song": "第57次取消发送",
+        "artist": "菲菲公主",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV198KuzLEjx",
+        "playCount": 3768141
+      },
+      {
+        "song": "时间煮雨",
+        "artist": "郁可唯",
+        "category": "治愈民谣女声",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1C44y1B7Uh",
+        "playCount": 3596319
+      },
+      {
+        "song": "绿色",
+        "artist": "陈雪凝",
+        "category": "治愈民谣女声",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1eu4y1y7ZG",
+        "playCount": 2580471
+      },
+      {
+        "song": "我的歌声里",
+        "artist": "曲婉婷",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1484y1R7Ep",
+        "playCount": 2507025
+      },
+      {
+        "song": "月牙湾",
+        "artist": "飞儿乐团",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1R3411L7Qc",
+        "playCount": 1899325
+      },
+      {
+        "song": "泡沫",
+        "artist": "邓紫棋",
+        "category": "华语女声流行",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1ky4y157AQ",
+        "playCount": 1865787
+      },
+      {
+        "song": "说爱你",
+        "artist": "蔡依林",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1CG411A7S2",
+        "playCount": 1539790
+      },
+      {
+        "song": "我要你",
+        "artist": "任素汐",
+        "category": "治愈民谣女声",
+        "mode": "acappella",
+        "suitability": "S",
+        "bvid": "BV1xF411p7tR",
+        "playCount": 1405700
+      },
+      {
+        "song": "体面",
+        "artist": "于文文",
+        "category": "热歌与影视OST",
+        "mode": "bedroom_bgm",
+        "suitability": "S",
+        "bvid": "BV1zQ4y1X7dB",
+        "playCount": 1365969
+      }
+    ]
+  }
+}

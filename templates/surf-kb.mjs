@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { serperGoogleSearch } from './reverse-image.mjs';
@@ -734,12 +735,12 @@ function loadMemeKb() {
 
 function saveMemeKb(kb) {
   kb.updatedAt = new Date().toISOString();
-  if (kb.memes.length > 400) kb.memes = kb.memes.slice(-400);
+  if (kb.memes.length > 2000) kb.memes = kb.memes.slice(-2000);
   writeJsonAtomic(MEME_KB_PATH, kb);
 }
 
 function makeMemeId(name) {
-  return `m_${Buffer.from(name).toString('hex').slice(0, 10)}`;
+  return `m_${crypto.createHash('sha1').update(String(name || '')).digest('hex').slice(0, 10)}`;
 }
 
 // ── 4. 核心入口：每日定时冲浪 + 萌娘学梗 + 自动配梗图 ─────────────────────────
@@ -1094,12 +1095,8 @@ export async function resolveMemeImage(ref, { log = () => {} } = {}) {
   const kb = loadMemeKb();
   let found = kb.memes.find((m) => m.id === q);
   if (!found) {
-    const qLower = q.toLowerCase();
-    const scored = kb.memes
-      .map((m) => ({ m, score: scoreMemeMatch(m, qLower) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score);
-    if (scored.length && scored[0].score >= 20) found = scored[0].m;
+    const matched = matchMemesInKb(kb.memes, q, { strictForLongUtterance: false, minScore: 20 });
+    if (matched.length) found = matched[0].meme;
   }
   if (found && found.imageFile && fs.existsSync(found.imageFile)) {
     return found;

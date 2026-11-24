@@ -366,8 +366,8 @@ export async function searchAndDownloadBilibiliSong({ song, artist = '', bvid: e
     ? [`${cleanArtist} ${cleanSong} 官方MV 无损`, `${cleanArtist} ${cleanSong} 原唱`, `${cleanArtist} ${cleanSong}`]
     : [`${cleanSong} 官方MV 原唱 无损`, `${cleanSong} 原唱 完整版`, `${cleanSong} MV`];
 
-  // 严防外放录屏音箱试听（满屏房间大混响）、AMV 混剪、翻唱、多人大合唱
-  const badRe = /翻唱|cover|男声版|女声版|伴奏|纯音乐|练唱|教程|吉他谱|翻弹|串烧|合集|歌单|reaction|解析|教学|ai翻唱|dj版|变速|升调|降调|0\.8x|1\.2x|群星|合唱版|大合唱|男女对唱|对唱|多人|声乐团|钢琴版|唢呐|二胡|古筝版|录音棚大声听|百万豪装|音响试听|音箱试听|耳机试听|车载音响|沉浸式试听|此时此刻|amv|mad|混剪|踩点|高燃|剪辑|鬼畜|日文版|日语版|韩文版/i;
+  // 严防外放录屏音箱试听（满屏房间大混响）、AMV 混剪、翻唱、多人大合唱、DJ/琴谱/KTV
+  const badRe = /翻唱|cover|男声版|女声版|伴奏|纯音乐|练唱|教程|吉他谱|琴谱|光遇|翻弹|串烧|合集|歌单|reaction|解析|教学|ai翻唱|dj版|dj\b|变速|升调|降调|0\.8x|1\.2x|群星|合唱|大合唱|男女对唱|对唱|多人|声乐团|钢琴版|唢呐|二胡|古筝版|录音棚大声听|专业录音棚听|百万豪装|百万级|录音棚试听|音响试听|音箱试听|耳机试听|车载音响|沉浸式试听|此时此刻|amv|mad|混剪|踩点|高燃|剪辑|鬼畜|日文版|日语版|韩文版|ktv|mtv|左耳.*右耳|毕业歌会/i;
   const badAuthorsRe = /jlrs-?leofm/i;
   const goodRe = /官方mv|官方版|原唱|hi-?res|无损|flac|4k|唱片|太合|索尼|环球|华纳|杰威尔|滚石|福茂|英皇|相信音乐|放映员|完整版|单曲|歌词/i;
   const userWantedBad = badRe.test(`${cleanSong} ${cleanArtist}`);

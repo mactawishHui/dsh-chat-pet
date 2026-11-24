@@ -12,3 +12,7 @@ qq-bot-migration.md
 
 # macOS 系统文件
 .DS_Store
+
+# 本地蓄水工程状态、临时音频与拉取的远端快照（不提交）
+.local/
+

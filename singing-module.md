@@ -70,12 +70,13 @@ flowchart TD
 - **自然气口衔接**：开场白后留 `0.36~0.48s` 呼吸气口 + 伴奏 `0.55s` 柔和淡入，完整唱完最后一句后伴奏 `0.90s` 自然淡出 + `0.38~0.45s` 气口再接收尾吐槽，与《红色高跟鞋》同等丝滑；总长超 `58.8s` 自动省略收尾口白，保证单条 60s QQ 语音完整不截断。
 
 ### 3.5 工程稳定性、选源避坑与零磁盘膨胀
-- **B 站原唱精准避坑**：自动屏蔽“录音棚大声听/百万豪装/音响试听”（外放录屏大混响）、AMV 混剪、多人大合唱与翻唱，并在同等条件下优先纯无损音频源而非夹带电影台词的影视 MV。
-- **全链路无损 FLAC 分轨传输 + `curl` 上传 + 同曲并发合并**：
-  - 送入 Demucs 的粗切音频与分轨输出均采用 **100% 无损 FLAC**（`acappella` 模式跳过 `other` 伴奏下载），传输体积相比原始 WAV 缩减 **3~6 倍**且逐比特保留立体声相位（零损 Mid/Side 主唱提取），同时 `uploadToReplicate` 改用 `curl` 带重试流式上传，消除低带宽云主机多 MB 断链；
+- **精选金曲直连目录 + B 站原唱精准避坑**：优先命中预筛 118 首纯净原唱目录 [`curated-songs-catalog.json`](./curated-songs-catalog.json)（已验 BVID 直连零误搜，未命中自动回退实时检索）；实时检索自动屏蔽“录音棚大声听/专业录音棚试听/百万豪装/音响试听”（外放录屏大混响）、AMV 混剪、DJ/琴谱/光遇/KTV/MTV、左右耳、毕业歌会、多人大合唱与翻唱，并在同等条件下优先纯无损音频源而非夹带电影台词的影视 MV。
+- **全链路无损 FLAC 分轨传输 + `curl` 定向代理加速 + 同曲并发合并**：
+  - 送入 Demucs 的粗切音频与分轨输出均采用 **100% 无损 FLAC**（`acappella` 模式跳过 `other` 伴奏下载），传输体积相比原始 WAV 缩减 **3~6 倍**且逐比特保留立体声相位（零损 Mid/Side 主唱提取）；
+  - Replicate 文件上传、分轨下载与 `ensureRvcModelUrl()` 24h 声模 `HEAD` 校验全线改用 `curl` + 可选 `REPLICATE_PROXY` 环境变量加速（国内 B 站与 DashScope 仍强制 `--noproxy '*'` 直连），消除低带宽云主机 `fetch failed` 与误判重传 51MB 声模（实测分轨下载 5.3s、声模校验 2.9s）；
   - `INFLIGHT_COVERS` 对相同 `(歌名, 模式)` 的并发点歌做 Promise 合并，彻底杜绝重复拉源、重复分轨与 Replicate 冷启动排队互掐。
 - **会话态唱歌任务感知**：`qq-bridge` 实时追踪每条会话的 `singTask` 状态（`running` / `done` / `failed`）并注入唤醒提示，杜绝失败后 AI 误以为仍在后台录歌而光嘴上敷衍“正在弄”却不调工具。
-- **声模 24h 过期自动续期 + 磁盘零膨胀**：`ensureRvcModelUrl()` 自动 `HEAD` 校验 + 单飞锁 `curl` 续传；任务结束 `finally` 即清工作目录，[`templates/disk-hygiene.mjs`](./templates/disk-hygiene.mjs) 夜间兜底清理残留。
+- **零磁盘膨胀**：任务结束 `finally` 即清工作目录，[`templates/disk-hygiene.mjs`](./templates/disk-hygiene.mjs) 夜间兜底清理残留。
 
 ---
 

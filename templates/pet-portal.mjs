@@ -527,7 +527,7 @@ function renderPortalHtml() {
           <span id="gameActivePill" class="pill">未连接游戏</span>
         </h2>
         <div class="hint">开着 QQ 语音电话时直接开口指挥她即可；没打电话也能在这里直接下指令或看她在世界里的实时血量与背包。</div>
-        <div id="gameTelemetryBox" class="cmdBox" style="margin-bottom:10px;line-height:1.7">等待游戏连接…</div>
+        <div id="gameTelemetryBox" class="cmdBox" style="margin-bottom:10px;line-height:1.7;white-space:pre-wrap">等待游戏连接…</div>
         <div class="row" style="margin-bottom:8px">
           <button class="sm mcQuickBtn" data-cmd="跟我走">🏃 跟我走</button>
           <button class="sm mcQuickBtn" data-cmd="贴身保护我">🛡️ 贴身保镖</button>
@@ -1298,13 +1298,13 @@ async function loadGameStatus() {
     // 渲染 MC 用户名白名单与敲门 IP
     const players = mc.access?.allowedPlayers || [];
     $('mcPlayerChips').innerHTML = players.length
-      ? players.map(p => '<span class="chip">' + esc(p) + ' <button class="x" onclick="removeMcPlayer(\'' + esc(p) + '\')">×</button></span>').join('')
+      ? players.map(p => '<span class="chip">' + esc(p) + ' <button class="x" onclick="removeMcPlayer(\\'' + esc(p) + '\\')">×</button></span>').join('')
       : '<span style="font-size:12px;color:var(--muted)">未限定用户名（任何已敲门 IP 的玩家均可进入）</span>';
     const ips = mc.access?.allowedIps || [];
     $('mcIpChips').innerHTML = ips.length
       ? ips.map(x => {
           const leftH = x.expiresAt ? Math.max(1, Math.round((x.expiresAt - Date.now()) / 3600000)) + 'h' : '永久';
-          return '<span class="chip">' + esc(x.ip) + ' (' + leftH + ') <button class="x" onclick="removeMcIp(\'' + esc(x.ip) + '\')">×</button></span>';
+          return '<span class="chip">' + esc(x.ip) + ' (' + leftH + ') <button class="x" onclick="removeMcIp(\\'' + esc(x.ip) + '\\')">×</button></span>';
         }).join('')
       : '<span style="font-size:12px;color:var(--muted)">暂无放行 IP（点上方绿色按钮立即放行你当前电脑 IP）</span>';
 
@@ -1328,7 +1328,7 @@ async function loadGameStatus() {
       if (Array.isArray(t.inventory) && t.inventory.length) {
         lines.push('🎒 背包：' + t.inventory.slice(0, 10).map(i => i.name + '×' + i.count).join('、'));
       }
-      $('gameTelemetryBox').textContent = lines.length ? lines.join('\n') : ('已连接《' + active.game + '》，等待游戏状态同步…');
+      $('gameTelemetryBox').textContent = lines.length ? lines.join('\\n') : ('已连接《' + active.game + '》，等待游戏状态同步…');
       const acts = (active.recentActions || []).slice().reverse();
       $('gameActionLog').innerHTML = acts.length
         ? acts.map(a => '<div class="msg ' + (a.success ? 'ai' : 'sys') + '">' + esc(a.name) + '(' + esc(a.args ? JSON.stringify(a.args) : '') + ') → ' + esc(a.message || (a.success ? '完成' : '失败')) + (a.say ? ' | 「' + esc(a.say) + '」' : '') + '</div>').join('')

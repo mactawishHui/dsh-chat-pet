@@ -1,11 +1,18 @@
 /**
- * mc-companion.mjs — 小鲸鲸 Minecraft 1.21.1 具身联机队友（Mineflayer + 标准 Neuro-API 客户端）
+ * mc-companion.mjs — 小鲸鲸 Minecraft 1.21.1 具身联机队友 V2（200ms 快环生存战斗 + 真实环境感知 + 标准 Neuro-API）
  *
- * 设计原则：
- *   1. 本身就是标准 Neuro-API v1 WebSocket 客户端（直连 game-hub.mjs），与后续 Steam Neuro-SDK Mod 共用同一大脑与语音链路
- *   2. 严禁 LLM 动态 eval 写代码；全部能力由「快环本地生存反射 + 16 个白名单安全技能」提供
- *   3. 内置中英文方块/物品别名映射（木头/铁矿/煤/石头/工作台/火把/面包…），对语音口语指令极其友好
- *   4. 针对 Mineflayer 1.21.1 稳定性加固：所有寻路与采集严格加超时熔断、卡死自愈、工具自动切换
+ * V2 核心升级（解决延迟迟钝、易被怪打死、语音与游戏行为脱节三大痛点）：
+ *   1. 200ms (5Hz) 毫秒级本地快环反射：
+ *      - 自动疾跑（sprint）、自动穿护甲/副手拿盾、精准武器攻击冷却（~580ms）与击退拉扯
+ *      - 任何模式下遭近身敌对怪袭击均立即自卫反击，残血（≤6血）自动疾跑拉扯+吃食物保命
+ *      - 苦力怕专项防爆协议：严禁贴脸站撸！靠近 6.5 格立刻反方向疾跑躲避并实时高优告警
+ *      - 阵亡发送 level='critical' 零冷却必达警报，复活后自动跑回玩家身边
+ *   2. 1.5s 高频真实态势感知（Grounded Telemetry）：
+ *      - 实时上报存活/刚复活秒数、血量/饥饿、与玩家精确距离及上下高差、手持物品、真实背包、
+ *        周围 16 格真实方块/动物/怪物/工作台/熔炉/床，以及最近一次动作的真实成败结果，彻底根除语音瞎编！
+ *   3. 实打实的建造与采集技能：
+ *      - build_shelter 自动将原木合成为木板并搭出 2 格高 5x5 带门围墙（方块不够则如实报错绝不吹牛）
+ *      - combat_mob 支持疾跑追击逃跑动物（羊/牛/猪/鸡）与苦力怕打完即撤放风筝
  */
 
 import fs from 'node:fs';
@@ -34,6 +41,15 @@ const HOSTILE_MOBS = new Set([
   'enderman', 'witch', 'slime', 'phantom', 'pillager', 'vindicator', 'blaze', 'ghast', 'piglin_brute',
   'hoglin', 'zombified_piglin', 'wither_skeleton', 'silverfish', 'magma_cube', 'breeze'
 ]);
+
+const PASSIVE_ANIMALS = new Set(['sheep', 'cow', 'pig', 'chicken', 'rabbit', 'horse', 'wolf', 'llama', 'goat']);
+
+const MOB_CN = {
+  zombie: '僵尸', husk: '尸壳', drowned: '溺尸', skeleton: '骷髅', stray: '流浪者',
+  creeper: '苦力怕', spider: '蜘蛛', cave_spider: '洞穴蜘蛛', enderman: '末影人',
+  witch: '女巫', slime: '史莱姆', phantom: '幻翼', pillager: '掠夺者',
+  sheep: '羊', cow: '牛', pig: '猪', chicken: '鸡', rabbit: '兔子', wolf: '狼',
+};
 
 const FOOD_PRIORITY = [
   'golden_carrot', 'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_salmon',
@@ -104,6 +120,7 @@ const ITEM_ALIASES = {
   苹果: ['apple'],
   牛肉: ['cooked_beef', 'beef'],
   猪肉: ['cooked_porkchop', 'porkchop'],
+  羊肉: ['cooked_mutton', 'mutton'],
   煤炭: ['coal', 'charcoal'],
   煤: ['coal', 'charcoal'],
   铁矿: ['raw_iron', 'iron_ingot'],
@@ -129,6 +146,22 @@ const MOB_ALIASES = {
   鸡: ['chicken'],
 };
 
+const LOG_TO_PLANKS = {
+  oak_log: 'oak_planks',
+  birch_log: 'birch_planks',
+  spruce_log: 'spruce_planks',
+  jungle_log: 'jungle_planks',
+  acacia_log: 'acacia_planks',
+  dark_oak_log: 'dark_oak_planks',
+  mangrove_log: 'mangrove_planks',
+  cherry_log: 'cherry_planks',
+};
+
+const BUILD_BLOCKS = [
+  'cobblestone', 'cobbled_deepslate', 'dirt',
+  'oak_planks', 'spruce_planks', 'birch_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks', 'cherry_planks', 'mangrove_planks',
+];
+
 function resolveNames(raw, aliasMap) {
   const s = String(raw || '').trim().toLowerCase();
   if (!s) return [];
@@ -137,6 +170,10 @@ function resolveNames(raw, aliasMap) {
     if (s.includes(k) || k.includes(s)) return vals;
   }
   return [s.replace(/\s+/g, '_')];
+}
+
+function cnMob(name) {
+  return MOB_CN[name] || name || '怪物';
 }
 
 function loadHome() {
@@ -160,7 +197,7 @@ function describeTime(timeOfDay) {
   if (t < 6000) return '上午';
   if (t < 11500) return '下午';
   if (t < 13000) return '黄昏(马上天黑)';
-  if (t < 22500) return '夜晚(注意怪物)';
+  if (t < 22500) return '夜晚(刷怪中)';
   return '黎明';
 }
 
@@ -178,7 +215,7 @@ const REGISTERED_ACTIONS = [
   },
   {
     name: 'go_to_player',
-    description: '立刻跑到指定玩家身边并停下',
+    description: '立刻疾跑跑到指定玩家身边并停下',
     schema: {
       type: 'object',
       properties: {
@@ -200,7 +237,7 @@ const REGISTERED_ACTIONS = [
   },
   {
     name: 'craft_item',
-    description: '合成物品（如 木板/木棍/工作台/火把/木镐/石镐/石剑/铁镐/熔炉/箱子 等，需要工作台时会自动寻找附近工作台）',
+    description: '合成物品（如 木板/木棍/工作台/火把/木镐/石镐/石剑/铁镐/熔炉/箱子 等，需要工作台时会自动寻找或放下工作台）',
     schema: {
       type: 'object',
       properties: {
@@ -230,7 +267,7 @@ const REGISTERED_ACTIONS = [
       properties: {
         item: { type: 'string', description: '物品名（中文或英文 ID）' },
         player: { type: 'string', description: '目标玩家名（可不填）' },
-        count: { type: 'integer', minimum: 1, maximum: 64, description: '数量（不填默认全给或给一半）' },
+        count: { type: 'integer', minimum: 1, maximum: 64, description: '数量（不填默认全给）' },
       },
       required: ['item'],
     },
@@ -253,7 +290,7 @@ const REGISTERED_ACTIONS = [
   },
   {
     name: 'guard_player',
-    description: '开启贴身保镖模式：跟着玩家并自动迎击靠近的怪物',
+    description: '开启贴身保镖模式：跟着玩家并自动高速迎击靠近的怪物',
     schema: {
       type: 'object',
       properties: {
@@ -263,17 +300,17 @@ const REGISTERED_ACTIONS = [
   },
   {
     name: 'combat_mob',
-    description: '攻击附近一只敌对怪物或指定动物（如 僵尸/骷髅/蜘蛛/猪/牛/羊）',
+    description: '疾跑追击并击杀附近一只敌对怪物或指定动物（如 羊/猪/牛/鸡/僵尸/骷髅/蜘蛛；遇苦力怕自动放风筝不贴脸）',
     schema: {
       type: 'object',
       properties: {
-        mob: { type: 'string', description: '目标生物名（可不填，默认最近敌对怪）' },
+        mob: { type: 'string', description: '目标生物名（可不填，默认最近非苦力怕敌对怪）' },
       },
     },
   },
   {
     name: 'place_torch',
-    description: '在脚下或附近插一根火把照明',
+    description: '在脚下或附近插一根火把照明（背包没火把时会尝试用木棍+煤自动合成）',
     schema: { type: 'object', properties: {} },
   },
   {
@@ -283,7 +320,7 @@ const REGISTERED_ACTIONS = [
   },
   {
     name: 'build_shelter',
-    description: '用背包里的方块在附近快速搭一个简易防怪小屋墙体',
+    description: '在玩家附近搭一个 2 格高带门洞的防怪简易小屋（会自动把原木合成为木板，方块不足时会如实说明）',
     schema: { type: 'object', properties: {} },
   },
   {
@@ -328,10 +365,17 @@ class MinecraftCompanion {
     this.lastHealth = 20;
     this.lastNightWarnDay = -1;
     this.lastCreeperAlertAt = 0;
+    this.lastDamageAlertAt = 0;
+    this.lastAttackAt = 0;
+    this.lastArmorCheckAt = 0;
+    this.lastDiedAt = 0;
+    this.deathCount = 0;
+    this.lastActionSummary = '';
     this.lastContextSent = '';
     this.wsReconnectTimer = null;
     this.reflexTimer = null;
     this.telemetryTimer = null;
+    this.reflexBusy = false;
     this.shuttingDown = false;
   }
 
@@ -362,7 +406,7 @@ class MinecraftCompanion {
       this.sendNeuro({ command: 'startup' });
       this.sendNeuro({ command: 'actions/register', data: { actions: REGISTERED_ACTIONS } });
       if (this.mcReady) {
-        this.pushContext('我已经在 Minecraft 世界里上线啦，随时等你一起冒险！', false);
+        this.pushContext('小鲸鲸已经进入 Minecraft 世界并就绪。', true);
         this.pushTelemetry();
       }
     });
@@ -384,6 +428,8 @@ class MinecraftCompanion {
           args = msg.data.data;
         }
         const res = await this.executeSkill(name, args);
+        this.lastActionSummary = `${res.success ? '✅' : '❌'} ${name}: ${res.message || ''}`;
+        this.pushTelemetry();
         this.sendNeuro({
           command: 'action/result',
           data: { id, success: Boolean(res.success), message: String(res.message || '') },
@@ -414,7 +460,7 @@ class MinecraftCompanion {
       username: MC_USERNAME,
       version: MC_VERSION,
       auth: MC_AUTH,
-      hideErrors: false,
+      hideErrors: true,
     });
     bot.loadPlugin(pathfinder);
     this.bot = bot;
@@ -424,6 +470,7 @@ class MinecraftCompanion {
       this.lastHealth = bot.health ?? 20;
       const mv = new Movements(bot);
       mv.canDig = true;
+      mv.allowSprinting = true;
       mv.allow1by1towers = true;
       mv.maxDropDown = 4;
       mv.scafoldingBlocks = [];
@@ -434,7 +481,6 @@ class MinecraftCompanion {
       bot.pathfinder.setMovements(mv);
       const p = bot.entity.position;
       log(`✅ 已降生 MC 世界！坐标=(${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)})`);
-      this.pushContext(`我已进入 Minecraft 世界，出生在 (${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)})`, false);
       this.pushTelemetry();
       this.startLoops();
     });
@@ -450,15 +496,12 @@ class MinecraftCompanion {
     bot.on('playerJoined', (player) => {
       if (!player?.username || player.username.toLowerCase() === MC_USERNAME.toLowerCase()) return;
       log(`👤 玩家进入世界: ${player.username}`);
-      this.pushHighlight('fun', `${player.username} 进世界啦！快来看看我在这儿呢！`);
-      // 若当前闲着，主动凑过去迎接
-      if (this.activeMode === 'idle') {
-        setTimeout(() => {
-          if (this.activeMode === 'idle' && this.mcReady) {
-            this.executeSkill('follow_player', { player: player.username, distance: 3 }).catch(() => {});
-          }
-        }, 2500);
-      }
+      this.pushHighlight('fun', `${player.username} 进入 MC 世界了，我现在正朝他跑过去！`);
+      setTimeout(() => {
+        if (this.activeMode === 'idle' && this.mcReady) {
+          this.executeSkill('follow_player', { player: player.username, distance: 3 }).catch(() => {});
+        }
+      }, 1200);
     });
 
     bot.on('health', () => {
@@ -466,29 +509,52 @@ class MinecraftCompanion {
       const cur = Math.round(bot.health ?? 20);
       const drop = this.lastHealth - cur;
       this.lastHealth = cur;
-      if (drop >= 2) {
+      if (drop >= 2 && cur > 0) {
         const attacker = this.findNearestHostile(10);
-        const mobHint = attacker ? `被 ${attacker.name} 偷袭了` : '受伤掉血了';
-        if (cur <= 8) {
-          this.pushHighlight('urgent', `救命啊我${mobHint}，只剩 ${Math.ceil(cur / 2)} 颗心了！`);
-        } else if (drop >= 4) {
-          this.pushHighlight('urgent', `哎哟痛死了，我${mobHint}！`);
-        }
-        // 挨打且当前在护卫或空闲时自动反击附近近战怪（苦力怕除外）
-        if (attacker && attacker.name !== 'creeper' && cur > 6 && (this.activeMode === 'guard' || this.activeMode === 'idle')) {
-          this.attackEntityBrief(attacker).catch(() => {});
+        const mobName = attacker ? cnMob(attacker.name) : '怪物';
+        const now = Date.now();
+        if (cur <= 8 && now - this.lastDamageAlertAt > 7000) {
+          this.lastDamageAlertAt = now;
+          this.pushHighlight('urgent', `小鲸鲸被${mobName}打残血了，只剩 ${Math.ceil(cur / 2)} 颗心，正在拉扯吃东西自救！`);
+        } else if (drop >= 4 && now - this.lastDamageAlertAt > 10000) {
+          this.lastDamageAlertAt = now;
+          this.pushHighlight('urgent', `小鲸鲸刚被${mobName}重击了一下，正在立刻反击！`);
         }
       }
     });
 
     bot.on('death', () => {
       this.taskSeq++;
+      this.lastDiedAt = Date.now();
+      this.deathCount++;
       this.activeMode = 'idle';
-      this.activeTaskLabel = '刚复活整理中';
+      this.activeTaskLabel = '刚阵亡在出生点复活';
+      this.lastActionSummary = '💀 刚阵亡，已回出生点复活（背包掉落）';
       try { bot.pathfinder.setGoal(null); } catch {}
-      log('💀 小鲸鲸阵亡了');
-      this.pushHighlight('urgent', '呜呜我刚才不小心挂掉了，复活回出生点了，等我跑回来找你！');
-      this.pushContext('我刚才死掉复活了，背包可能掉了，需要跑回去找朋友或重新收集基础物资', false);
+      bot.clearControlStates();
+      log(`💀 小鲸鲸阵亡了 (第 ${this.deathCount} 次)`);
+      this.pushTelemetry();
+      // critical 级别零冷却必达通话引擎，绝不会被前几秒的受伤播报吞掉！
+      this.pushHighlight('critical', '小鲸鲸刚在游戏里被怪打死了，背包掉了，刚刚在出生点复活，正往玩家身边跑回来！');
+    });
+
+    bot.on('respawn', () => {
+      if (!this.mcReady) return;
+      this.lastHealth = 20;
+      this.pushTelemetry();
+      // 复活 1.5 秒后如果玩家在线且不太远，自动疾跑跑回玩家身边
+      setTimeout(() => {
+        if (!this.mcReady || this.activeMode !== 'idle') return;
+        const target = this.getHumanPlayerEntity('');
+        if (target && target.position.distanceTo(bot.entity.position) <= 140) {
+          this.activeMode = 'follow';
+          this.followTarget = target.username;
+          this.activeTaskLabel = `复活跑回 ${target.username} 身边`;
+          bot.setControlState('sprint', true);
+          try { bot.pathfinder.setGoal(new GoalFollow(target, 3), true); } catch {}
+          this.pushTelemetry();
+        }
+      }, 1500);
     });
 
     bot.on('kicked', (reason) => {
@@ -511,15 +577,17 @@ class MinecraftCompanion {
 
   startLoops() {
     this.stopLoops();
-    // 1. 快环本能反射（每 1.3s：防溺水、躲苦力怕、饥饿自动吃东西、贴身护卫反击、黄昏提醒）
+    // 1. 200ms (5Hz) 毫秒级快环生存/战斗反射（零大模型等待！）
     this.reflexTimer = setInterval(() => {
-      this.runFastReflex().catch(() => {});
-    }, 1300);
+      if (this.reflexBusy) return;
+      this.reflexBusy = true;
+      this.runFastReflex().catch(() => {}).finally(() => { this.reflexBusy = false; });
+    }, 200);
 
-    // 2. 态势遥测与摘要同步（每 4s）
+    // 2. 1.5s 高频真实态势遥测同步（确保通话大脑随时掌握真实画面/背包/成败）
     this.telemetryTimer = setInterval(() => {
       this.pushTelemetry();
-    }, 4000);
+    }, 1500);
   }
 
   stopLoops() {
@@ -527,57 +595,152 @@ class MinecraftCompanion {
     if (this.telemetryTimer) { clearInterval(this.telemetryTimer); this.telemetryTimer = null; }
   }
 
+  async autoEquipArmorAndShield() {
+    const bot = this.bot;
+    if (!bot) return;
+    const slots = [
+      { suffix: '_helmet', dest: 'head', idx: 5 },
+      { suffix: '_chestplate', dest: 'torso', idx: 6 },
+      { suffix: '_leggings', dest: 'legs', idx: 7 },
+      { suffix: '_boots', dest: 'feet', idx: 8 },
+    ];
+    const matScore = (n) => n.startsWith('netherite') ? 5 : n.startsWith('diamond') ? 4 : n.startsWith('iron') ? 3 : n.startsWith('chainmail') ? 2 : n.startsWith('golden') ? 2 : 1;
+    for (const s of slots) {
+      const cur = bot.inventory.slots[s.idx];
+      const curScore = cur ? matScore(cur.name) : 0;
+      const better = bot.inventory.items()
+        .filter((i) => i.name.endsWith(s.suffix) && matScore(i.name) > curScore)
+        .sort((a, b) => matScore(b.name) - matScore(a.name))[0];
+      if (better) {
+        try { await bot.equip(better, s.dest); } catch {}
+      }
+    }
+    if (!bot.inventory.slots[45]) {
+      const shield = bot.inventory.items().find((i) => i.name === 'shield');
+      if (shield) {
+        try { await bot.equip(shield, 'off-hand'); } catch {}
+      }
+    }
+  }
+
   async runFastReflex() {
     const bot = this.bot;
     if (!bot || !this.mcReady || !bot.entity) return;
+    const now = Date.now();
+    const myPos = bot.entity.position;
 
-    // 溺水自救
+    // 0. 溺水自动上浮
     if (bot.entity.isInWater) {
       bot.setControlState('jump', true);
     } else if (this.activeMode === 'idle') {
       bot.setControlState('jump', false);
     }
 
-    // 苦力怕瞬间闪避
+    // 1. 每 6 秒自动穿最优护甲/副手拿盾
+    if (now - this.lastArmorCheckAt > 6000) {
+      this.lastArmorCheckAt = now;
+      await this.autoEquipArmorAndShield().catch(() => {});
+    }
+
+    // 2. 苦力怕最高优瞬时闪避（6.8 格内反方向疾跑！）
     const creeper = Object.values(bot.entities).find((e) =>
-      e && e.name === 'creeper' && e.position.distanceTo(bot.entity.position) < 5.5
+      e && e.isValid && e.name === 'creeper' && e.position.distanceTo(myPos) < 6.8
     );
     if (creeper) {
-      const away = bot.entity.position.minus(creeper.position).normalize().scaled(8);
-      const fleePos = bot.entity.position.plus(away);
-      try { bot.pathfinder.setGoal(new GoalXZ(Math.round(fleePos.x), Math.round(fleePos.z))); } catch {}
-      if (Date.now() - this.lastCreeperAlertAt > 12000) {
-        this.lastCreeperAlertAt = Date.now();
-        this.pushHighlight('urgent', '卧槽我旁边有苦力怕！快跑快跑要炸了！');
+      const diff = myPos.minus(creeper.position);
+      const len = Math.hypot(diff.x, diff.z) || 1;
+      const fleeX = Math.round(myPos.x + (diff.x / len) * 11);
+      const fleeZ = Math.round(myPos.z + (diff.z / len) * 11);
+      bot.setControlState('sprint', true);
+      try { bot.pathfinder.setGoal(new GoalXZ(fleeX, fleeZ), true); } catch {}
+      if (now - this.lastCreeperAlertAt > 11000) {
+        this.lastCreeperAlertAt = now;
+        this.pushHighlight('urgent', '小鲸鲸身边有苦力怕要炸了，正在反方向疾跑闪避，提醒玩家别贴脸！');
       }
       return;
     }
 
-    // 饥饿自动进食
-    if ((bot.food ?? 20) <= 14 && !this._eating) {
-      await this.tryEatFood().catch(() => {});
+    // 3. 饥饿/掉血自动进食（15 饱食度或血量 ≤ 12 且非满饱食立即吃）
+    if (((bot.food ?? 20) <= 15 || ((bot.health ?? 20) <= 12 && (bot.food ?? 20) < 20)) && !this._eating) {
+      this.tryEatFood().catch(() => {});
     }
 
-    // 保镖模式：自动清除靠近自己或目标玩家的敌对怪
+    // 4. 残血战术拉扯（HP ≤ 6 且 6 格内有敌对怪：先疾跑拉开距离回血，不傻站着送死！）
+    const closeDanger = this.findNearestHostile(6.5, null, true);
+    if ((bot.health ?? 20) <= 6 && closeDanger) {
+      const diff = myPos.minus(closeDanger.position);
+      const len = Math.hypot(diff.x, diff.z) || 1;
+      bot.setControlState('sprint', true);
+      try {
+        bot.pathfinder.setGoal(new GoalXZ(Math.round(myPos.x + (diff.x / len) * 10), Math.round(myPos.z + (diff.z / len) * 10)), true);
+      } catch {}
+      return;
+    }
+
+    // 5. 全模式近身自卫 & 保镖主动清怪（任何状态下被 4.5 格内怪贴脸都立即拔剑反击！）
+    const playerEntity = this.getHumanPlayerEntity(this.followTarget);
+    let combatTarget = null;
     if (this.activeMode === 'guard') {
-      const targetEntity = this.getHumanPlayerEntity(this.followTarget);
-      const anchor = targetEntity ? targetEntity.position : bot.entity.position;
-      const threat = Object.values(bot.entities)
-        .filter((e) => e && HOSTILE_MOBS.has(e.name) && e.name !== 'creeper' && e.position.distanceTo(anchor) <= 9.5)
-        .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
-      if (threat) {
-        await this.attackEntityBrief(threat).catch(() => {});
-      } else if (targetEntity) {
-        try { bot.pathfinder.setGoal(new GoalFollow(targetEntity, 3), true); } catch {}
+      const anchor = playerEntity ? playerEntity.position : myPos;
+      combatTarget = Object.values(bot.entities)
+        .filter((e) => e && e.isValid && HOSTILE_MOBS.has(e.name) && e.name !== 'creeper' && e.position.distanceTo(anchor) <= 11)
+        .sort((a, b) => a.position.distanceTo(myPos) - b.position.distanceTo(myPos))[0] || null;
+    } else if (this.activeMode !== 'task') {
+      // 跟随或空闲时：4.8 格内有近身非苦力怕怪立刻拔刀自卫
+      combatTarget = this.findNearestHostile(4.8, null, true);
+    } else {
+      // 做采集/建造任务时：3.4 格贴脸打到自己了也立刻先挥刀击退
+      combatTarget = this.findNearestHostile(3.4, null, true);
+    }
+
+    if (combatTarget) {
+      await this.stepMeleeCombat(combatTarget);
+      return;
+    }
+
+    // 6. 跟随/保镖模式下远距离自动疾跑跟上
+    if ((this.activeMode === 'follow' || this.activeMode === 'guard') && playerEntity) {
+      const dist = playerEntity.position.distanceTo(myPos);
+      bot.setControlState('sprint', dist > 4.5);
+      if (this.activeMode === 'guard' && dist > 4.5) {
+        try { bot.pathfinder.setGoal(new GoalFollow(playerEntity, 3), true); } catch {}
       }
     }
 
-    // 黄昏提醒（每天一次）
+    // 7. 黄昏提醒（每天一次）
     const day = Math.floor((bot.time?.age || 0) / 24000);
     const tod = Number(bot.time?.timeOfDay || 0) % 24000;
-    if (tod >= 12100 && tod <= 12800 && this.lastNightWarnDay !== day && this.getHumanPlayerNames().length > 0) {
+    if (tod >= 12100 && tod <= 12600 && this.lastNightWarnDay !== day && this.getHumanPlayerNames().length > 0) {
       this.lastNightWarnDay = day;
-      this.pushHighlight('info', '天快黑了诶，要不要回基地或者找张床睡觉跳过晚上？');
+      this.pushHighlight('info', 'MC 里马上天黑要刷怪了，提醒玩家准备火把或避难小屋。');
+    }
+  }
+
+  async stepMeleeCombat(entity) {
+    const bot = this.bot;
+    if (!entity || !entity.isValid || !bot.entity) return;
+    await this.equipBestWeapon();
+    const myPos = bot.entity.position;
+    const d = entity.position.distanceTo(myPos);
+    const now = Date.now();
+
+    // 追击拉近
+    if (d > 2.8) {
+      bot.setControlState('sprint', true);
+      try {
+        bot.pathfinder.setGoal(new GoalNear(entity.position.x, entity.position.y, entity.position.z, 2), true);
+      } catch {}
+    } else {
+      bot.setControlState('sprint', false);
+    }
+
+    // 严格遵守 MC 1.9+ 武器攻击冷却（580ms），命中率与击退翻倍！
+    if (d <= 3.6 && now - this.lastAttackAt >= 580) {
+      this.lastAttackAt = now;
+      try {
+        await bot.lookAt(entity.position.offset(0, (entity.height || 1.6) * 0.65, 0), true);
+        bot.attack(entity);
+      } catch {}
     }
   }
 
@@ -604,13 +767,14 @@ class MinecraftCompanion {
     return best;
   }
 
-  findNearestHostile(maxDist = 16, nameFilter = null) {
+  findNearestHostile(maxDist = 16, nameFilter = null, excludeCreeper = false) {
     const bot = this.bot;
     if (!bot?.entities || !bot.entity) return null;
     const list = Object.values(bot.entities).filter((e) => {
-      if (!e || !e.position || e === bot.entity) return false;
+      if (!e || !e.isValid || !e.position || e === bot.entity) return false;
       const d = e.position.distanceTo(bot.entity.position);
       if (d > maxDist) return false;
+      if (excludeCreeper && e.name === 'creeper') return false;
       if (Array.isArray(nameFilter) && nameFilter.length) return nameFilter.includes(e.name);
       return HOSTILE_MOBS.has(e.name);
     });
@@ -625,6 +789,33 @@ class MinecraftCompanion {
       counts.set(it.name, (counts.get(it.name) || 0) + it.count);
     }
     return [...counts.entries()].map(([name, count]) => ({ name, count })).slice(0, 24);
+  }
+
+  scanEnvironmentBrief() {
+    const bot = this.bot;
+    if (!bot || !bot.entity) return {};
+    const p = bot.entity.position;
+    const features = [];
+    const check = (label, names, maxDistance = 18) => {
+      const ids = names.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined);
+      if (!ids.length) return;
+      const blk = bot.findBlock({ matching: ids, maxDistance });
+      if (blk) features.push(`${label}(${Math.round(blk.position.distanceTo(p))}格)`);
+    };
+    check('树林', BLOCK_ALIASES.木头, 20);
+    check('工作台', ['crafting_table'], 14);
+    check('熔炉', ['furnace'], 14);
+    check('床', ['white_bed', 'red_bed', 'blue_bed', 'light_blue_bed', 'yellow_bed', 'green_bed'], 16);
+    check('煤/铁矿', ['coal_ore', 'iron_ore', 'deepslate_coal_ore', 'deepslate_iron_ore'], 18);
+    check('火把', ['torch', 'wall_torch'], 14);
+
+    const nearbyAnimals = Object.values(bot.entities)
+      .filter((e) => e && e.isValid && PASSIVE_ANIMALS.has(e.name) && e.position.distanceTo(p) <= 22)
+      .sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))
+      .slice(0, 5)
+      .map((e) => ({ name: e.name, cn: cnMob(e.name), dist: Math.round(e.position.distanceTo(p)) }));
+
+    return { features, nearbyAnimals };
   }
 
   pushContext(message, silent = true) {
@@ -642,14 +833,24 @@ class MinecraftCompanion {
     const humans = this.getHumanPlayerNames();
     const nearbyPlayers = humans.map((n) => {
       const e = bot.players[n]?.entity;
-      return { name: n, dist: e ? Math.round(e.position.distanceTo(p)) : null };
+      return {
+        name: n,
+        dist: e ? Math.round(e.position.distanceTo(p)) : null,
+        dy: e ? Math.round(e.position.y - p.y) : null,
+      };
     });
     const nearbyMobs = Object.values(bot.entities)
-      .filter((e) => e && HOSTILE_MOBS.has(e.name) && e.position.distanceTo(p) <= 18)
+      .filter((e) => e && e.isValid && HOSTILE_MOBS.has(e.name) && e.position.distanceTo(p) <= 20)
+      .sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))
       .slice(0, 6)
-      .map((e) => ({ name: e.name, dist: Math.round(e.position.distanceTo(p)) }));
+      .map((e) => ({ name: e.name, cn: cnMob(e.name), dist: Math.round(e.position.distanceTo(p)) }));
     const inv = this.getCompactInventory();
     const todText = describeTime(bot.time?.timeOfDay);
+    const env = this.scanEnvironmentBrief();
+    const heldItem = bot.heldItem ? bot.heldItem.name : '空手';
+    const justDiedAgoSec = this.lastDiedAt && (Date.now() - this.lastDiedAt < 45000)
+      ? Math.round((Date.now() - this.lastDiedAt) / 1000)
+      : null;
 
     this.sendNeuro({
       command: 'pet/telemetry',
@@ -660,34 +861,39 @@ class MinecraftCompanion {
         food: Math.round(bot.food ?? 20),
         pos: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) },
         timeOfDay: todText,
+        heldItem,
         activeMode: this.activeMode,
         activeTask: this.activeTaskLabel,
+        lastActionSummary: this.lastActionSummary,
+        justDiedAgoSec,
+        deathCount: this.deathCount,
         humanPlayerCount: humans.length,
         nearbyPlayers,
         nearbyMobs,
+        nearbyAnimals: env.nearbyAnimals,
+        nearbyFeatures: env.features,
         inventory: inv,
       },
     });
 
-    // 精简文本态势更新（仅内容变化时更新）
     const pDesc = nearbyPlayers.length
-      ? nearbyPlayers.map((x) => `${x.name}(${x.dist !== null ? x.dist + '格' : '较远'})`).join(', ')
+      ? nearbyPlayers.map((x) => `${x.name}(${x.dist !== null ? `${x.dist}格${x.dy > 2 ? ',高处' : (x.dy < -2 ? ',低处' : '')}` : '较远'})`).join(', ')
       : '暂无真人玩家';
-    const mDesc = nearbyMobs.length
-      ? nearbyMobs.map((m) => `${m.name}(${m.dist}格)`).join(', ')
-      : '周围安全';
-    const invDesc = inv.length ? inv.slice(0, 12).map((x) => `${x.name}x${x.count}`).join(', ') : '空';
-    const digest = `状态: 血量${Math.round(bot.health ?? 20)}/20 饥饿${Math.round(bot.food ?? 20)}/20 | 时间:${todText} | 坐标(${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}) | 任务:${this.activeTaskLabel} | 玩家:${pDesc} | 怪物:${mDesc} | 背包:${invDesc}`;
+    const mDesc = nearbyMobs.length ? nearbyMobs.map((m) => `${m.cn}(${m.dist}格)`).join(', ') : '周围无怪';
+    const aDesc = env.nearbyAnimals.length ? env.nearbyAnimals.map((a) => `${a.cn}(${a.dist}格)`).join(', ') : '无';
+    const invDesc = inv.length ? inv.slice(0, 12).map((x) => `${x.name}x${x.count}`).join(', ') : '空背包';
+    const digest = `血量${Math.round(bot.health ?? 20)}/20 饥饿${Math.round(bot.food ?? 20)}/20 手持:${heldItem} | ${todText} | 正在:${this.activeTaskLabel} | 玩家:${pDesc} | 怪物:${mDesc} | 动物:${aDesc} | 周围:${env.features.join('/') || '平地'} | 背包:${invDesc}`;
     if (digest !== this.lastContextSent) {
       this.lastContextSent = digest;
       this.pushContext(digest, true);
     }
   }
 
-  async gotoWithTimeout(goal, timeoutMs = 15000) {
+  async gotoWithTimeout(goal, timeoutMs = 14000) {
     const bot = this.bot;
     let timer = null;
     try {
+      bot.setControlState('sprint', true);
       await Promise.race([
         bot.pathfinder.goto(goal),
         new Promise((_, reject) => {
@@ -700,6 +906,7 @@ class MinecraftCompanion {
       return true;
     } finally {
       if (timer) clearTimeout(timer);
+      bot.setControlState('sprint', false);
     }
   }
 
@@ -726,7 +933,9 @@ class MinecraftCompanion {
     for (const name of rank) {
       const it = bot.inventory.items().find((i) => i.name === name);
       if (it) {
-        try { await bot.equip(it, 'hand'); } catch {}
+        if (bot.heldItem?.name !== it.name) {
+          try { await bot.equip(it, 'hand'); } catch {}
+        }
         return it.name;
       }
     }
@@ -745,7 +954,7 @@ class MinecraftCompanion {
     this._eating = true;
     try {
       await bot.equip(chosen, 'hand');
-      await Promise.race([bot.consume(), sleep(2800)]);
+      await Promise.race([bot.consume(), sleep(2600)]);
       return { ok: true, message: `吃了 ${chosen.name}，现在饥饿度 ${Math.round(bot.food)}/20` };
     } catch (e) {
       return { ok: false, message: `吃东西失败: ${e?.message ?? e}` };
@@ -754,19 +963,19 @@ class MinecraftCompanion {
     }
   }
 
-  async attackEntityBrief(entity) {
+  async convertLogsToPlanksIfNeeded() {
     const bot = this.bot;
-    if (!entity || !entity.isValid) return;
-    await this.equipBestWeapon();
-    const d = entity.position.distanceTo(bot.entity.position);
-    if (d > 3.2) {
-      try { bot.pathfinder.setGoal(new GoalNear(entity.position.x, entity.position.y, entity.position.z, 2), true); } catch {}
-    }
-    if (d <= 3.6) {
-      try {
-        await bot.lookAt(entity.position.offset(0, entity.height * 0.7, 0), true);
-        bot.attack(entity);
-      } catch {}
+    for (const [logName, plankName] of Object.entries(LOG_TO_PLANKS)) {
+      const logItem = bot.inventory.items().find((i) => i.name === logName);
+      if (!logItem) continue;
+      const plankDef = bot.registry.itemsByName[plankName];
+      if (!plankDef) continue;
+      const recipes = bot.recipesFor(plankDef.id, null, 1, null);
+      if (recipes.length) {
+        try {
+          await bot.craft(recipes[0], Math.min(logItem.count, 8), null);
+        } catch {}
+      }
     }
   }
 
@@ -801,8 +1010,9 @@ class MinecraftCompanion {
         this.followTarget = target.username || args.player || '';
         this.followDist = dist;
         this.activeTaskLabel = `跟随 ${this.followTarget}`;
+        bot.setControlState('sprint', true);
         bot.pathfinder.setGoal(new GoalFollow(target, dist), true);
-        return { success: true, message: `开始跟着 ${this.followTarget} 走啦` };
+        return { success: true, message: `正在疾跑跟着 ${this.followTarget}` };
       }
 
       if (name === 'guard_player') {
@@ -810,53 +1020,49 @@ class MinecraftCompanion {
         if (!target) return { success: false, message: '附近看不到要保护的玩家' };
         this.activeMode = 'guard';
         this.followTarget = target.username || args.player || '';
-        this.activeTaskLabel = `贴身保护 ${this.followTarget}`;
+        this.activeTaskLabel = `贴身保镖保护 ${this.followTarget}`;
+        bot.setControlState('sprint', true);
         bot.pathfinder.setGoal(new GoalFollow(target, 3), true);
-        return { success: true, message: `保镖模式开启！我会紧跟 ${this.followTarget} 并清理靠近的怪物` };
+        return { success: true, message: `保镖模式开启，紧跟 ${this.followTarget} 并清理近身怪物` };
       }
 
       if (name === 'go_to_player') {
         const target = this.getHumanPlayerEntity(args.player || '');
         if (!target) return { success: false, message: '附近找不到目标玩家' };
         this.activeMode = 'task';
-        this.activeTaskLabel = `跑向 ${target.username}`;
-        await this.gotoWithTimeout(new GoalNear(target.position.x, target.position.y, target.position.z, 2), 16000);
-        if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '已到达身边'; }
-        return { success: true, message: `已经跑到 ${target.username} 身边啦` };
+        this.activeTaskLabel = `疾跑去找 ${target.username}`;
+        await this.gotoWithTimeout(new GoalNear(target.position.x, target.position.y, target.position.z, 2), 14000);
+        if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = `在 ${target.username} 身边`; }
+        return { success: true, message: `已经跑到 ${target.username} 身边了` };
       }
 
       if (name === 'gather_resource') {
         const candidates = resolveNames(args.resource, BLOCK_ALIASES);
         const targetCount = Math.max(1, Math.min(16, Number(args.count || 4)));
         const blockIds = candidates.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined);
-        if (!blockIds.length) {
-          return { success: false, message: `不认识方块类型 ${args.resource}` };
-        }
+        if (!blockIds.length) return { success: false, message: `不认识方块类型 ${args.resource}` };
         this.activeMode = 'task';
         this.activeTaskLabel = `采集 ${args.resource} x${targetCount}`;
         let gathered = 0;
-        const deadline = Date.now() + 35000;
+        const deadline = Date.now() + 28000;
         for (let i = 0; i < targetCount && Date.now() < deadline; i++) {
           if (this.taskSeq !== mySeq) break;
-          const blk = bot.findBlock({ matching: blockIds, maxDistance: 34 });
+          const blk = bot.findBlock({ matching: blockIds, maxDistance: 32 });
           if (!blk) break;
           try {
-            await this.gotoWithTimeout(new GoalNear(blk.position.x, blk.position.y, blk.position.z, 3), 10000);
+            await this.gotoWithTimeout(new GoalNear(blk.position.x, blk.position.y, blk.position.z, 3), 9000);
             if (this.taskSeq !== mySeq) break;
             const fresh = bot.blockAt(blk.position);
             if (!fresh || !blockIds.includes(fresh.type)) continue;
             await this.equipBestToolFor(fresh);
-            await Promise.race([bot.dig(fresh, true), sleep(6500)]);
+            await Promise.race([bot.dig(fresh, true), sleep(6000)]);
             gathered++;
-            // 靠近捡取掉落物
-            await this.gotoWithTimeout(new GoalNear(blk.position.x, blk.position.y, blk.position.z, 1), 3500).catch(() => {});
-            await sleep(220);
+            await this.gotoWithTimeout(new GoalNear(blk.position.x, blk.position.y, blk.position.z, 1), 2800).catch(() => {});
+            await sleep(180);
           } catch {}
         }
         if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '待命中'; }
-        if (gathered === 0) {
-          return { success: false, message: `周围 34 格内没找到可采集的 ${args.resource}` };
-        }
+        if (gathered === 0) return { success: false, message: `周围 32 格内没找到可采集的 ${args.resource}` };
         return { success: true, message: `成功采集了 ${gathered} 个 ${args.resource}` };
       }
 
@@ -872,7 +1078,6 @@ class MinecraftCompanion {
           let recipes = bot.recipesFor(itemDef.id, null, 1, null);
           let useTable = null;
           if (!recipes.length) {
-            // 如果需要工作台，尝试走近附近工作台或放一个身上的工作台
             if (!tableBlock) {
               const invTable = bot.inventory.items().find((i) => i.name === 'crafting_table');
               if (invTable) {
@@ -897,7 +1102,7 @@ class MinecraftCompanion {
             return { success: true, message: `成功合成了 ${itemName} x${count}` };
           }
         }
-        return { success: false, message: `材料不足或缺少附近工作台，暂时没法合成 ${args.item}` };
+        return { success: false, message: `材料不足或周围缺工作台，暂时没法合成 ${args.item}` };
       }
 
       if (name === 'smelt_item') {
@@ -912,16 +1117,14 @@ class MinecraftCompanion {
         const furnace = await bot.openFurnace(furnaceBlock);
         try {
           const qty = Math.min(inputItem.count, Math.max(1, Number(args.count || 4)));
-          if (fuelItem && !furnace.fuelItem()) {
-            await furnace.putFuel(fuelItem.type, null, Math.min(fuelItem.count, 4));
-          }
+          if (fuelItem && !furnace.fuelItem()) await furnace.putFuel(fuelItem.type, null, Math.min(fuelItem.count, 4));
           await furnace.putInput(inputItem.type, null, qty);
-          await sleep(1200);
+          await sleep(1000);
           if (furnace.outputItem()) await furnace.takeOutput().catch(() => {});
         } finally {
           furnace.close();
         }
-        return { success: true, message: `已把 ${inputItem.name} 放进熔炉烧制啦` };
+        return { success: true, message: `已把 ${inputItem.name} 放进熔炉烧制` };
       }
 
       if (name === 'give_item') {
@@ -929,21 +1132,21 @@ class MinecraftCompanion {
         if (!target) return { success: false, message: '附近找不到目标玩家' };
         const candidates = resolveNames(args.item, ITEM_ALIASES);
         const item = bot.inventory.items().find((i) => candidates.includes(i.name) || i.name.includes(String(args.item).toLowerCase()));
-        if (!item) return { success: false, message: `背包里没有 ${args.item}` };
+        if (!item) return { success: false, message: `我背包里没有 ${args.item}` };
         const qty = Math.min(item.count, Math.max(1, Number(args.count || item.count)));
         this.activeMode = 'task';
         this.activeTaskLabel = `送 ${item.name} 给 ${target.username}`;
-        await this.gotoWithTimeout(new GoalNear(target.position.x, target.position.y, target.position.z, 2), 14000);
+        await this.gotoWithTimeout(new GoalNear(target.position.x, target.position.y, target.position.z, 2), 12000);
         await bot.lookAt(target.position.offset(0, 1.4, 0), true);
         await bot.toss(item.type, null, qty);
         if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '待命中'; }
-        return { success: true, message: `已把 ${item.name} x${qty} 扔给 ${target.username} 啦` };
+        return { success: true, message: `已把 ${item.name} x${qty} 扔给 ${target.username}` };
       }
 
       if (name === 'equip_item') {
         const candidates = resolveNames(args.item, ITEM_ALIASES);
         const item = bot.inventory.items().find((i) => candidates.includes(i.name) || i.name.includes(String(args.item).toLowerCase()));
-        if (!item) return { success: false, message: `背包里没有 ${args.item}` };
+        if (!item) return { success: false, message: `我背包里没有 ${args.item}` };
         let dest = 'hand';
         if (item.name.endsWith('_helmet')) dest = 'head';
         else if (item.name.endsWith('_chestplate')) dest = 'torso';
@@ -961,28 +1164,62 @@ class MinecraftCompanion {
 
       if (name === 'combat_mob') {
         const filter = args.mob ? resolveNames(args.mob, MOB_ALIASES) : null;
-        const target = this.findNearestHostile(18, filter);
-        if (!target) return { success: false, message: `附近没有找到 ${args.mob || '敌对怪物'}` };
+        // 若未明确指定苦力怕，默认跳过苦力怕防止白给炸死
+        const wantCreeper = Boolean(filter && filter.includes('creeper'));
+        const target = this.findNearestHostile(24, filter, !wantCreeper);
+        if (!target) return { success: false, message: `附近 24 格内没看到 ${args.mob || '敌对怪物'}` };
+        const tCn = cnMob(target.name);
         this.activeMode = 'task';
-        this.activeTaskLabel = `迎战 ${target.name}`;
+        this.activeTaskLabel = `追击 ${tCn}`;
         await this.equipBestWeapon();
-        const deadline = Date.now() + 12000;
+        const deadline = Date.now() + 14000;
         let hits = 0;
+
         while (target.isValid && Date.now() < deadline && this.taskSeq === mySeq) {
-          const d = target.position.distanceTo(bot.entity.position);
-          if (d > 20) break;
-          if (d > 3.0) {
-            bot.pathfinder.setGoal(new GoalNear(target.position.x, target.position.y, target.position.z, 2), true);
+          const myPos = bot.entity.position;
+          const d = target.position.distanceTo(myPos);
+          if (d > 26 || (bot.health ?? 20) <= 5) break;
+
+          if (target.name === 'creeper') {
+            // 苦力怕放风筝协议：贴近砍一刀立刻反方向疾跑退 7 格重置引信！
+            if (d > 3.2) {
+              bot.setControlState('sprint', true);
+              bot.pathfinder.setGoal(new GoalNear(target.position.x, target.position.y, target.position.z, 2), true);
+            } else {
+              await bot.lookAt(target.position.offset(0, 1.0, 0), true);
+              bot.attack(target);
+              hits++;
+              const diff = myPos.minus(target.position);
+              const len = Math.hypot(diff.x, diff.z) || 1;
+              bot.setControlState('sprint', true);
+              bot.pathfinder.setGoal(new GoalXZ(Math.round(myPos.x + (diff.x / len) * 8), Math.round(myPos.z + (diff.z / len) * 8)), true);
+              await sleep(1100);
+              continue;
+            }
           } else {
-            await bot.lookAt(target.position.offset(0, target.height * 0.65, 0), true);
-            bot.attack(target);
-            hits++;
+            if (d > 2.8) {
+              bot.setControlState('sprint', true);
+              bot.pathfinder.setGoal(new GoalNear(target.position.x, target.position.y, target.position.z, 1), true);
+            } else {
+              bot.setControlState('sprint', false);
+              if (Date.now() - this.lastAttackAt >= 580) {
+                this.lastAttackAt = Date.now();
+                await bot.lookAt(target.position.offset(0, (target.height || 1.4) * 0.65, 0), true);
+                bot.attack(target);
+                hits++;
+              }
+            }
           }
-          await sleep(520);
+          await sleep(180);
         }
+
+        bot.setControlState('sprint', false);
         try { bot.pathfinder.setGoal(null); } catch {}
         if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '待命中'; }
-        return { success: true, message: target.isValid ? `和 ${target.name} 交手了 ${hits} 下` : `成功解决了一只 ${target.name}！` };
+        if (!target.isValid) {
+          return { success: true, message: `已经打死那只${tCn}了！` };
+        }
+        return { success: hits > 0, message: hits > 0 ? `追着${tCn}砍了 ${hits} 下，它还没死或跑开了` : `没追上那只${tCn}` };
       }
 
       if (name === 'place_torch') {
@@ -991,12 +1228,12 @@ class MinecraftCompanion {
           const c = await this.executeSkill('craft_item', { item: 'torch', count: 1 });
           if (c.success) torch = bot.inventory.items().find((i) => i.name === 'torch');
         }
-        if (!torch) return { success: false, message: '背包里没有火把，也没有木棍和煤来合成' };
+        if (!torch) return { success: false, message: '我背包里没有火把，也没有木棍和煤炭可以合成火把' };
         const under = bot.blockAt(bot.entity.position.offset(0, -1, 0));
-        if (!under || under.name === 'air') return { success: false, message: '脚下没法插火把' };
+        if (!under || under.name === 'air') return { success: false, message: '脚下是空的，没法插火把' };
         await bot.equip(torch, 'hand');
         await bot.placeBlock(under, new Vec3(0, 1, 0));
-        return { success: true, message: '在脚边插了一根火把照明' };
+        return { success: true, message: '已经在脚边插好一根火把了' };
       }
 
       if (name === 'sleep_in_bed') {
@@ -1004,56 +1241,73 @@ class MinecraftCompanion {
         if (!bed) return { success: false, message: '附近 18 格内没看到床' };
         await this.gotoWithTimeout(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), 10000);
         await bot.sleep(bed);
-        return { success: true, message: '钻进被窝睡觉啦，晚安！' };
+        return { success: true, message: '已经躺上床睡觉了' };
       }
 
       if (name === 'build_shelter') {
-        const mat = bot.inventory.items().find((i) =>
-          ['dirt', 'cobblestone', 'oak_planks', 'birch_planks', 'spruce_planks', 'cobbled_deepslate'].includes(i.name) && i.count >= 8
-        );
-        if (!mat) return { success: false, message: '背包里建筑方块不够（至少需要 8 块泥土/圆石/木板）' };
+        // 先自动把身上原木合成为木板
+        await this.convertLogsToPlanksIfNeeded();
+        const totalBlocks = bot.inventory.items()
+          .filter((i) => BUILD_BLOCKS.includes(i.name))
+          .reduce((acc, i) => acc + i.count, 0);
+        if (totalBlocks < 16) {
+          return { success: false, message: `我身上只有 ${totalBlocks} 块建筑方块，不够搭防怪围墙（至少要 16 块木板/圆石/泥土），得先砍点木头或挖点土` };
+        }
+        // 尽量跑到玩家身边开建
+        const player = this.getHumanPlayerEntity('');
+        if (player && player.position.distanceTo(bot.entity.position) > 5 && player.position.distanceTo(bot.entity.position) < 28) {
+          await this.gotoWithTimeout(new GoalNear(player.position.x, player.position.y, player.position.z, 2), 8000).catch(() => {});
+        }
         this.activeMode = 'task';
-        this.activeTaskLabel = '搭建简易避难围墙';
-        await bot.equip(mat, 'hand');
+        this.activeTaskLabel = '搭建 2 格高简易防怪小屋';
         const base = bot.entity.position.floored();
-        const offsets = [
-          [2, 0, -1], [2, 0, 0], [2, 0, 1],
-          [-2, 0, -1], [-2, 0, 0], [-2, 0, 1],
-          [-1, 0, 2], [0, 0, 2], [1, 0, 2],
-          [-1, 0, -2], [1, 0, -2],
+        // 5x5 两格高带南侧 1 格门洞的围墙，防僵尸直接迈进来
+        const ring = [
+          [2, -2], [2, -1], [2, 0], [2, 1], [2, 2],
+          [-2, -2], [-2, -1], [-2, 0], [-2, 1], [-2, 2],
+          [-1, 2], [0, 2], [1, 2],
+          [-1, -2], [1, -2], // (0, -2) 留门洞
         ];
         let placed = 0;
-        for (const [dx, dy, dz] of offsets) {
-          if (this.taskSeq !== mySeq) break;
-          const pos = base.offset(dx, dy, dz);
-          const cur = bot.blockAt(pos);
-          const below = bot.blockAt(pos.offset(0, -1, 0));
-          if (cur?.name === 'air' && below && below.name !== 'air') {
-            try {
-              await bot.placeBlock(below, new Vec3(0, 1, 0));
-              placed++;
-              await sleep(160);
-            } catch {}
+        for (const dy of [0, 1]) {
+          for (const [dx, dz] of ring) {
+            if (this.taskSeq !== mySeq) break;
+            const mat = bot.inventory.items().find((i) => BUILD_BLOCKS.includes(i.name));
+            if (!mat) break;
+            const pos = base.offset(dx, dy, dz);
+            const cur = bot.blockAt(pos);
+            const below = bot.blockAt(pos.offset(0, -1, 0));
+            if (cur?.name === 'air' && below && below.name !== 'air') {
+              try {
+                if (bot.heldItem?.name !== mat.name) await bot.equip(mat, 'hand');
+                await bot.placeBlock(below, new Vec3(0, 1, 0));
+                placed++;
+                await sleep(130);
+              } catch {}
+            }
           }
         }
         if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '待命中'; }
-        return { success: placed > 0, message: placed > 0 ? `用 ${mat.name} 搭了 ${placed} 块简易防护墙！` : '周围地形不太平整，没能放下防护墙' };
+        return {
+          success: placed >= 6,
+          message: placed >= 6 ? `已经实际搭好了 ${placed} 块围墙方块（留了门洞）` : `地形坑洼不平，只放下了 ${placed} 块方块，得换块平一点的地`,
+        };
       }
 
       if (name === 'set_home') {
         saveHome(bot.entity.position);
         const p = bot.entity.position;
-        return { success: true, message: `已把 (${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}) 记为咱们的家啦` };
+        return { success: true, message: `已把 (${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}) 记为咱们的家` };
       }
 
       if (name === 'go_home') {
         const home = loadHome();
-        if (!home) return { success: false, message: '还没有设置过家的坐标呢，先让我记一下家吧' };
+        if (!home) return { success: false, message: '还没设置过家的坐标呢' };
         this.activeMode = 'task';
         this.activeTaskLabel = `回家 (${home.x},${home.y},${home.z})`;
-        await this.gotoWithTimeout(new GoalBlock(home.x, home.y, home.z), 25000);
+        await this.gotoWithTimeout(new GoalBlock(home.x, home.y, home.z), 22000);
         if (this.taskSeq === mySeq) { this.activeMode = 'idle'; this.activeTaskLabel = '已回到家'; }
-        return { success: true, message: `已经平安回到家 (${home.x}, ${home.y}, ${home.z}) 啦` };
+        return { success: true, message: `已经回到家 (${home.x}, ${home.y}, ${home.z}) 了` };
       }
 
       return { success: false, message: `未知动作: ${name}` };

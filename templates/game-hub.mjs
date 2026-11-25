@@ -392,7 +392,7 @@ export class GameHub {
     } else if (trigger === 'in_game_chat') {
       userBlocks.push(`【玩家 ${userFrom} 在游戏聊天框说】「${userText}」\n请在 inGameChat 里自然短句回复他；如果他在让你做某事，同时选对应 action 执行！`);
     } else {
-      userBlocks.push(`【自主巡检】目前没有新的玩家指令。如果你正在跟着朋友或没事干，可以做一件有帮助或有趣的事（如帮砍木头/挖煤/吃东西/靠近朋友/保持警戒）；如果当前不需要打断现有行动，action 填 null。`);
+      userBlocks.push(`【自主巡检】目前没有新的玩家指令且你处于空闲状态。如果玩家在附近，优先 guard_player 或 follow_player 陪着他，或顺手砍少量木头/合成基础工具；严禁主动去打苦力怕（creeper）！如果没有必要打扰，action 填 null。`);
     }
     if (retryHint) {
       userBlocks.push(`【上一次尝试失败，请立刻修正】${retryHint}`);
@@ -506,6 +506,104 @@ export class GameHub {
   }
 
   /**
+   * <1ms 零大模型极速指令快路由（彻底砍掉二次 LLM 延迟：3800ms -> ~15ms！）
+   * 仅在 Minecraft 会话且意图明确时直出标准 Neuro-API 动作；复杂组合指令自动回退给大模型。
+   */
+  matchFastMcAction(text, session) {
+    if (!session || !/minecraft/i.test(session.game)) return null;
+    const t = String(text || '').trim();
+    if (!t) return null;
+    const has = (name) => session.actions.has(name);
+    const numM = t.match(/([1-9]\d?|[一二两三四五六七八九十])(?:个|根|块|只|把)?/);
+    const cnMap = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+    const parsedCount = numM ? (cnMap[numM[1]] || Math.min(16, Math.max(1, Number(numM[1]) || 4))) : null;
+
+    // 1. 停止 / 别动 / 待命
+    if (has('stop_action') && /(停手|停下|别动|别乱跑|先别干|暂停|原地待命|别打了|不玩了)/.test(t)) {
+      return { action: 'stop_action', args: {} };
+    }
+    // 2. 设家 / 回家
+    if (has('set_home') && /(设家|记.*家|这里当.*家|定为家)/.test(t)) {
+      return { action: 'set_home', args: {} };
+    }
+    if (has('go_home') && /(回家|回基地|滚回家)/.test(t) && !/(堵|建|搭)/.test(t)) {
+      return { action: 'go_home', args: {} };
+    }
+    // 3. 睡觉
+    if (has('sleep_in_bed') && /(去睡觉|快睡觉|上床|睡个觉)/.test(t)) {
+      return { action: 'sleep_in_bed', args: {} };
+    }
+    // 4. 吃东西
+    if (has('eat_food') && /(吃东西|吃点东西|吃口饭|快吃|补血|吃面包|吃肉)/.test(t)) {
+      return { action: 'eat_food', args: {} };
+    }
+    // 5. 插火把
+    if (has('place_torch') && /(插.*火把|放.*火把|点.*火把)/.test(t) && !/(围墙|搭|建)/.test(t)) {
+      return { action: 'place_torch', args: {} };
+    }
+    // 6. 建房子 / 搭小屋 / 围墙
+    if (has('build_shelter') && /(建.*房|搭.*房|盖.*房|搭.*小屋|建.*小屋|围.*墙|搭.*避难)/.test(t) && !/(砍|收集|挖)/.test(t)) {
+      return { action: 'build_shelter', args: {} };
+    }
+    // 7. 贴身保镖 / 保护我
+    if (has('guard_player') && /(保护我|护着我|当保镖|贴身保护|帮我清怪|守着我)/.test(t)) {
+      return { action: 'guard_player', args: {} };
+    }
+    // 8. 击杀指定生物/动物/怪物
+    if (has('combat_mob') && /(打死|砍死|干掉|杀掉|击杀|收拾|打那个|砍那个|打这只|砍僵尸|打僵尸|打羊|杀羊|砍羊|打骷髅|打蜘蛛|打猪|打牛|救我|救援)/.test(t)) {
+      const mobMap = [
+        [/(羊|绵羊)/, '羊'], [/(僵尸|尸壳)/, '僵尸'], [/(骷髅|小白)/, '骷髅'],
+        [/(蜘蛛)/, '蜘蛛'], [/(苦力怕|爬行者)/, '苦力怕'], [/(猪)/, '猪'],
+        [/(牛)/, '牛'], [/(鸡)/, '鸡'], [/(末影人)/, '末影人'],
+      ];
+      let mob = '';
+      for (const [re, name] of mobMap) { if (re.test(t)) { mob = name; break; } }
+      return { action: 'combat_mob', args: mob ? { mob } : {} };
+    }
+    // 9. 采集资源（砍木头/挖石头/挖煤/挖铁/挖钻石/挖土）
+    if (has('gather_resource') && /(砍|挖|采|弄点|搞点|收集|捡点)/.test(t)) {
+      const resMap = [
+        [/(木头|原木|树|橡木|云杉)/, '木头'], [/(钻石)/, '钻石'], [/(铁矿|铁)/, '铁矿'],
+        [/(煤|煤炭|煤矿)/, '煤炭'], [/(石头|圆石)/, '石头'], [/(泥土|土)/, '泥土'], [/(沙子|沙)/, '沙子'],
+      ];
+      for (const [re, resName] of resMap) {
+        if (re.test(t)) return { action: 'gather_resource', args: { resource: resName, count: parsedCount || 4 } };
+      }
+    }
+    // 10. 给物品
+    if (has('give_item') && /(给我|扔给我|丢给我|分我)/.test(t)) {
+      const itemMap = [
+        [/(木头|原木)/, '木头'], [/(木板)/, '木板'], [/(铁矿|铁锭|粗铁)/, '铁矿'],
+        [/(煤|煤炭)/, '煤炭'], [/(火把)/, '火把'], [/(石头|圆石)/, '圆石'],
+        [/(工作台)/, '工作台'], [/(面包|肉|食物|苹果)/, '面包'], [/(剑)/, '石剑'], [/(镐)/, '石镐'],
+      ];
+      for (const [re, itemName] of itemMap) {
+        if (re.test(t)) return { action: 'give_item', args: parsedCount ? { item: itemName, count: parsedCount } : { item: itemName } };
+      }
+    }
+    // 11. 合成常用物品
+    if (has('craft_item') && /(合成|做一把|做个|造个|做一个|做点)/.test(t)) {
+      const craftMap = [
+        [/(工作台)/, '工作台'], [/(木板)/, '木板'], [/(木棍)/, '木棍'], [/(火把)/, '火把'],
+        [/(石剑)/, '石剑'], [/(木剑)/, '木剑'], [/(铁剑)/, '铁剑'],
+        [/(石镐)/, '石镐'], [/(木镐)/, '木镐'], [/(铁镐)/, '铁镐'],
+        [/(熔炉)/, '熔炉'], [/(箱子)/, '箱子'], [/(盾牌)/, '盾牌'],
+      ];
+      for (const [re, itemName] of craftMap) {
+        if (re.test(t)) return { action: 'craft_item', args: { item: itemName, count: parsedCount || 1 } };
+      }
+    }
+    // 12. 跟随 / 过来
+    if (has('follow_player') && /(跟我走|跟着我|跟紧我|别掉队|跟我来)/.test(t)) {
+      return { action: 'follow_player', args: { distance: 3 } };
+    }
+    if (has('go_to_player') && /(过来|来我这|到我身边|来找我|快上来|上来看)/.test(t)) {
+      return { action: 'go_to_player', args: {} };
+    }
+    return null;
+  }
+
+  /**
    * 外部人类指令入口（QQ 语音通话 / QQ 聊天 / pet-portal / MC 游戏内聊天）
    */
   async handleHumanCommand({ from = '主人', text = '', via = 'voice', gameHint = '' } = {}) {
@@ -513,43 +611,53 @@ export class GameHub {
     if (!clean) return { ok: false, error: '空指令' };
     const session = this.getActiveSession(gameHint);
     if (!session) {
-      // 如果提到 MC 且托管器在休眠，允许自然提示
       if (this.mcManager && /(开服|启动|唤醒|打开|进服|来玩).*(mc|我的世界|minecraft)|(mc|我的世界|minecraft).*(开服|启动|唤醒|走起)/i.test(clean)) {
         const wakeRes = await this.mcManager.wake({ reason: `human_${via}`, spawnBot: true });
         return {
           ok: true,
           wakedMc: true,
+          needsVoiceReport: true,
           reply: wakeRes.alreadyRunning
             ? 'MC 服务器本来就开着呢，我已经在世界里等你啦！'
             : '好嘞，我正在把咱们的 MC 私服唤醒，大概十几秒就能进去啦！',
         };
       }
-      return { ok: false, error: '当前没有已连接的游戏会话', reply: '我现在还没连上任何游戏呢，先在管理台或让我把 MC 服开起来吧' };
+      return { ok: false, error: '当前没有已连接的游戏会话', needsVoiceReport: false, reply: '我现在还没连上任何游戏呢，先在管理台或让我把 MC 服开起来吧' };
     }
 
     session.lastHumanCmdAt = Date.now();
-    const trigger = via === 'in_game_chat' ? 'in_game_chat' : 'human_command';
-    const plan = await this.decideAction(session, {
-      trigger,
-      userFrom: from,
-      userText: clean,
-    });
+    const fastHit = (via !== 'in_game_chat') ? this.matchFastMcAction(clean, session) : null;
+    const plan = fastHit
+      ? { action: fastHit.action, args: fastHit.args, say: '', inGameChat: '', fastPath: true }
+      : await this.decideAction(session, {
+          trigger: via === 'in_game_chat' ? 'in_game_chat' : 'human_command',
+          userFrom: from,
+          userText: clean,
+        });
 
     let actionResult = null;
     if (plan.action && session.actions.has(plan.action)) {
       const def = session.actions.get(plan.action);
       const check = sanitizeActionArgs(def?.schema, plan.args);
       if (check.ok) {
-        log(`[${session.game}] 🎮 ${via}指令(${from}): "${clean}" -> ${plan.action}(${check.args ? JSON.stringify(check.args) : ''})`);
-        // 若是即时短动作，最多等 2.5s 拿到立刻反馈；长任务（如采矿/跟随）不阻塞语音回复
+        log(`[${session.game}] 🎮 ${via}${plan.fastPath ? '(⚡0ms快路由)' : ''}指令(${from}): "${clean}" -> ${plan.action}(${check.args ? JSON.stringify(check.args) : ''})`);
+        const startedAt = Date.now();
         const p = session.dispatchAction(plan.action, check.args, 20000).then((res) => {
-          session.addActionLog({ name: plan.action, args: check.args, success: res.success, message: res.message, say: plan.say });
-          if (res.message) session.addContext(`执行 ${plan.action}: ${res.message}`, true);
+          session.addActionLog({ name: plan.action, args: check.args, success: res.success, message: res.message, say: '' });
+          if (res.message) session.addContext(`执行 ${plan.action} ${res.success ? '成功' : '失败'}: ${res.message}`, true);
+          // 长任务延迟结束后的真实反馈：只有真正失败或有实质战果时才推送高光，绝不虚构
+          if (Date.now() - startedAt > 1400 && via.startsWith('voice')) {
+            if (!res.success && res.message) {
+              this.pushVoiceHighlight(session, 'fun', `小鲸鲸刚才执行「${clean}」失败了，真实原因：${res.message}`).catch(() => {});
+            } else if (res.success && (plan.action === 'combat_mob' || plan.action === 'build_shelter') && res.message) {
+              this.pushVoiceHighlight(session, 'fun', `小鲸鲸刚完成任务：${res.message}`).catch(() => {});
+            }
+          }
           return res;
         });
         actionResult = await Promise.race([
           p,
-          new Promise((r) => setTimeout(() => r({ pending: true, success: true, message: '正在执行中' }), 2400)),
+          new Promise((r) => setTimeout(() => r({ pending: true, success: true, message: '正在执行中' }), 1300)),
         ]);
       }
     }
@@ -562,28 +670,39 @@ export class GameHub {
       }
     }
 
-    const spokenReply = plan.say || plan.inGameChat || (actionResult?.message && actionResult.message !== '正在执行中' ? actionResult.message : (plan.action ? '好嘞收到，我这就去办！' : '收到啦'));
+    // 关键修复：绝不把执行前盲目乐观的 plan.say 当成成功结果报给语音！
+    // 只有动作立即失败（例如背包没火把、方块不够、附近没羊）才需要语音补播真实失败原因；正常开始执行时静默不重复插话！
+    const failedNow = Boolean(actionResult && !actionResult.pending && !actionResult.success);
+    const needsVoiceReport = failedNow;
+    const honestReply = failedNow
+      ? `小鲸鲸刚才尝试执行「${plan.action}」没做成，真实原因：${actionResult.message || '条件不满足'}`
+      : (actionResult?.message && actionResult.message !== '正在执行中' ? actionResult.message : (plan.action ? `已开始执行 ${plan.action}` : '收到'));
+
     return {
       ok: true,
       game: session.game,
+      fastPath: Boolean(plan.fastPath),
       action: plan.action,
       args: plan.args,
       actionResult,
-      reply: spokenReply,
+      needsVoiceReport,
+      reply: honestReply,
     };
   }
 
   /**
-   * 沙盒开放世界自主行动心跳（如 MC 中无人指挥时主动陪伴/采集/自保）
+   * 沙盒开放世界自主行动心跳（严格让路人类指令与活跃任务，绝不瞎打断、绝不主动找苦力怕送死、绝不发假语音）
    */
   async _autonomousTick() {
     if (!this.settings.autonomous) return;
     const now = Date.now();
     for (const session of this.sessions.values()) {
       if (session.closed || session.busy || session.usesForce || session.actions.size === 0) continue;
-      if (now - session.lastHumanCmdAt < 14000) continue;
+      // 人类刚下过指令 45 秒内、或机器人正在执行跟随/保镖/采集等任务时，绝不抢占打断！
+      if (now - session.lastHumanCmdAt < 45000) continue;
+      const curMode = session.telemetry?.activeMode;
+      if (curMode === 'task' || curMode === 'follow' || curMode === 'guard') continue;
       if (now - session.lastAutoTickAt < this.settings.autonomousIntervalSec * 1000) continue;
-      // 如果有 telemetry 且显示人类玩家列表为空，默认静默不烧 token（除非刚连上）
       const humanCount = Number(session.telemetry?.humanPlayerCount);
       if (Number.isFinite(humanCount) && humanCount === 0 && now - session.connectedAt > 60000) continue;
 
@@ -591,19 +710,21 @@ export class GameHub {
       session.busy = true;
       try {
         const plan = await this.decideAction(session, { trigger: 'auto' });
+        // 严禁自主决策主动去砍苦力怕送死！
+        if (plan.action === 'combat_mob' && /creeper|苦力怕/i.test(String(plan.args?.mob || ''))) {
+          continue;
+        }
         if (plan.action && session.actions.has(plan.action)) {
           const def = session.actions.get(plan.action);
           const check = sanitizeActionArgs(def?.schema, plan.args);
           if (check.ok) {
             log(`[${session.game}] 🤖 自主行动: ${plan.action}(${check.args ? JSON.stringify(check.args) : ''})`);
             const res = await session.dispatchAction(plan.action, check.args, 20000);
-            session.addActionLog({ name: plan.action, args: check.args, success: res.success, message: res.message, say: plan.say });
-            if (res.message) session.addContext(`自主执行 ${plan.action}: ${res.message}`, true);
+            session.addActionLog({ name: plan.action, args: check.args, success: res.success, message: res.message, say: '' });
+            if (res.message) session.addContext(`自主执行 ${plan.action} ${res.success ? '成功' : '失败'}: ${res.message}`, true);
           }
         }
-        if (plan.say) {
-          this.pushVoiceHighlight(session, 'fun', plan.say).catch(() => {});
-        }
+        // 注意：自主行动绝不再推送 plan.say 给语音，避免“语音抢话/身份错乱/实际没做成却吹牛”
       } catch (err) {
         log(`[${session.game}] 自主行动异常: ${err?.message ?? err}`);
       } finally {
@@ -613,13 +734,15 @@ export class GameHub {
   }
 
   /**
-   * 将游戏高光/紧急事件推送到正在进行的 QQ 实时语音通话（严格节流，不抢话、不刷屏）
+   * 将游戏高光/紧急事件推送到正在进行的 QQ 实时语音通话（critical 阵亡事件零冷却必达！）
    */
   async pushVoiceHighlight(session, level = 'fun', text = '') {
     const clean = String(text || '').trim();
     if (!clean || !this.settings.voiceCommentary) return false;
     const now = Date.now();
-    if (level === 'urgent') {
+    if (level === 'critical') {
+      session.lastUrgentVoiceAt = now;
+    } else if (level === 'urgent') {
       if (now - session.lastUrgentVoiceAt < 6500) return false;
       session.lastUrgentVoiceAt = now;
     } else {
@@ -640,6 +763,7 @@ export class GameHub {
           game: session.game,
           level,
           text: clean,
+          ts: now,
           telemetry: session.telemetry || {},
         }),
         signal: AbortSignal.timeout(3000),

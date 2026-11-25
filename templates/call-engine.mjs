@@ -1236,15 +1236,50 @@ export class RealtimeCallEngine {
       notes.push(activeSingNote);
     }
     const activeGameNote = await this._buildActiveGameNote();
+    const isPlayingGame = Boolean(this._activeGameStatus?.game);
     if (activeGameNote) {
       notes.push(activeGameNote);
     }
+
+    // 联机游戏极速并行快通道（0ms 本地识别明确操作指令 -> 在通话大脑思考之前就立刻驱动 MC 角色行动！）
+    this._lastTurnSidecarKind = '';
+    if (isPlayingGame && this.onSidecarTask) {
+      const fastGameRe = /(打死|砍死|干掉|击杀|收拾|打那个|砍那个|砍僵尸|打僵尸|打羊|杀羊|砍羊|打怪|救我|救援|保护我|护着我|当保镖|砍木头|砍树|砍点木|挖石头|挖煤|挖铁|挖矿|挖土|插火把|插个火把|建.*房|搭.*房|盖.*房|搭.*小屋|建.*小屋|围墙|跟我走|跟着我|跟紧我|过来|到我身边|来找我|停手|停下|别动|别乱跑|设家|记.*家|回家|去睡觉|吃东西|给我|扔给我|合成|做一把|做个工作台|开服|开一下MC)/;
+      if (fastGameRe.test(text)) {
+        this._lastTurnSidecarKind = 'game';
+        const fgStart = Date.now();
+        const fgPromise = Promise.resolve()
+          .then(() => this.onSidecarTask({ kind: 'game_fast', query: text, label: '游戏即时动作' }))
+          .catch(() => '');
+        // 最多等 240ms：若游戏立刻返回“没火把/方块不够/没找到羊”，本轮回复直接如实告诉对方，绝不吹牛！
+        const fgEarly = await Promise.race([
+          fgPromise,
+          new Promise((r) => setTimeout(() => r(null), 240)),
+        ]);
+        if (fgEarly && typeof fgEarly === 'string') {
+          this.log(`[call-game] ⚡ 并行快指令即时反馈 (${Date.now() - fgStart}ms): ${fgEarly.slice(0, 80)}`);
+          notes.push(`[游戏角色刚刚尝试执行对方指令的真实结果：${fgEarly}（请完全按这个真实结果如实回应对方，绝对不要瞎编已做成！）]`);
+        } else {
+          this.log(`[call-game] ⚡ 并行快指令已下发 (${Date.now() - fgStart}ms): "${text.slice(0, 32)}"`);
+          notes.push(`[提示：系统已抢先向你的游戏角色下发了执行指令，动作正在游戏里进行中；本轮正常口语答应即可，无需重复加 [GAME:...]，也绝对不要提前吹牛说“已经搞定了/已经盖好了”]`);
+          fgPromise.then((late) => {
+            const s = typeof late === 'string' ? late.trim() : '';
+            if (s) {
+              this.handleGameEvent({ game: this._activeGameStatus?.game || 'Minecraft', level: 'fun', text: s, ts: Date.now() }).catch(() => {});
+            }
+          });
+        }
+      }
+    }
+
     const recentUserContext = this.transcript
       .filter((x) => x.role === 'user')
       .slice(-3)
       .map((x) => x.text)
       .join(' | ');
-    const memeHit = lookupLocalMemeFast(text, this.memeKbPath);
+    const rawMemeHit = lookupLocalMemeFast(text, this.memeKbPath);
+    // 联机游戏期间提高梗库阈值（仅高置信度 ≥92 才触发），杜绝“你死了”误判成“急了急了”、“有个羊”误判成“燕子”！
+    const memeHit = (rawMemeHit && (!isPlayingGame || rawMemeHit.score >= 92)) ? rawMemeHit : null;
     if (memeHit) {
       const reps = memeHit.replies.length ? memeHit.replies.join(' / ') : memeHit.meaning;
       this.log(`[call-meme] 本地梗库命中「${memeHit.name}」(${memeHit.matchType}, score=${memeHit.score})`);
@@ -1252,8 +1287,7 @@ export class RealtimeCallEngine {
     }
 
     // 异步旁路工具：180ms 内完成的直接进本轮回答；超过 180ms 先零延迟过渡，查完后自动静默播报
-    this._lastTurnSidecarKind = '';
-    const sidecarTask = this.onSidecarTask
+    const sidecarTask = (!this._lastTurnSidecarKind && this.onSidecarTask)
       ? detectSidecarTask(text, { defaultCity: this.defaultCity, localMemeHit: Boolean(memeHit), recentContext: recentUserContext })
       : null;
     if (sidecarTask) {
@@ -1351,7 +1385,8 @@ export class RealtimeCallEngine {
 
   async _buildActiveGameNote() {
     let st = this._activeGameStatus;
-    if ((!st || Date.now() - st.updatedAt > 15000) && this.getGameStatus) {
+    // 每 2.8 秒拉一次真实游戏遥测+动作账本，杜绝语音大脑信息过期与脑身分离
+    if ((!st || Date.now() - st.updatedAt > 2800) && this.getGameStatus) {
       try {
         const fresh = await Promise.race([
           this.getGameStatus(),
@@ -1359,7 +1394,12 @@ export class RealtimeCallEngine {
         ]);
         if (fresh?.activeGame) {
           const s0 = Array.isArray(fresh.sessions) ? fresh.sessions[0] : null;
-          st = { game: fresh.activeGame, telemetry: s0?.telemetry || {}, updatedAt: Date.now() };
+          st = {
+            game: fresh.activeGame,
+            telemetry: s0?.telemetry || {},
+            recentActions: Array.isArray(s0?.recentActions) ? s0.recentActions.slice(-3) : [],
+            updatedAt: Date.now(),
+          };
           this._activeGameStatus = st;
         } else if (fresh && !fresh.activeGame) {
           this._activeGameStatus = null;
@@ -1369,28 +1409,74 @@ export class RealtimeCallEngine {
     }
     if (!st || !st.game || Date.now() - st.updatedAt > 120000) return '';
     const t = st.telemetry || {};
-    const bits = [];
-    if (Number.isFinite(t.hp)) bits.push(`血量${t.hp}/${t.maxHp || 20}`);
-    if (Number.isFinite(t.food)) bits.push(`饥饿${t.food}/20`);
-    if (t.timeOfDay) bits.push(t.timeOfDay);
-    if (t.activeTask) bits.push(`正在:${t.activeTask}`);
-    if (Array.isArray(t.nearbyMobs) && t.nearbyMobs.length) {
-      bits.push(`附近怪:${t.nearbyMobs.slice(0, 3).map((m) => `${m.name}(${m.dist}格)`).join('/')}`);
+    const lines = [`[当前游戏真实画面与状态 · 《${st.game}》（严禁脑补未出现的物品、建筑或战果！）]`];
+
+    const vital = [];
+    if (Number.isFinite(t.justDiedAgoSec)) vital.push(`⚠️你刚才 ${t.justDiedAgoSec} 秒前死过一次，刚在出生点复活、背包已掉`);
+    if (Number.isFinite(t.hp)) vital.push(`血量${t.hp}/${t.maxHp || 20}`);
+    if (Number.isFinite(t.food)) vital.push(`饥饿${t.food}/20`);
+    if (t.heldItem) vital.push(`手里拿着:${t.heldItem}`);
+    if (t.timeOfDay) vital.push(t.timeOfDay);
+    if (t.activeTask) vital.push(`正在:${t.activeTask}`);
+    if (vital.length) lines.push(`• 你自己状态：${vital.join(' | ')}`);
+
+    if (Array.isArray(t.nearbyPlayers) && t.nearbyPlayers.length) {
+      const pStr = t.nearbyPlayers.map((p) => {
+        if (p.dist === null || p.dist === undefined) return `${p.name}(很远看不见)`;
+        const h = p.dy > 2 ? '在你上方' : (p.dy < -2 ? '在你下方' : '同高度');
+        return `${p.name}(距你${p.dist}格,${h})`;
+      }).join('、');
+      lines.push(`• 玩家位置：${pStr}`);
     }
-    return `[当前正在联机游玩《${st.game}》${bits.length ? `（${bits.join(' | ')}）` : ''}：如果对方刚才让你在游戏里执行操作，回复末尾附 [GAME:简洁指令] 立刻操控角色！]`;
+    const envBits = [];
+    if (Array.isArray(t.nearbyMobs) && t.nearbyMobs.length) {
+      envBits.push(`敌对怪:${t.nearbyMobs.slice(0, 4).map((m) => `${m.cn || m.name}(${m.dist}格)`).join('/')}`);
+    } else {
+      envBits.push('周围无怪');
+    }
+    if (Array.isArray(t.nearbyAnimals) && t.nearbyAnimals.length) {
+      envBits.push(`动物:${t.nearbyAnimals.slice(0, 4).map((a) => `${a.cn || a.name}(${a.dist}格)`).join('/')}`);
+    }
+    if (Array.isArray(t.nearbyFeatures) && t.nearbyFeatures.length) {
+      envBits.push(`附近:${t.nearbyFeatures.join('/')}`);
+    }
+    lines.push(`• 你眼前真实环境：${envBits.join(' | ')}`);
+
+    if (Array.isArray(t.inventory)) {
+      const invStr = t.inventory.length
+        ? t.inventory.slice(0, 12).map((i) => `${i.name}×${i.count}`).join('、')
+        : '空背包（身上什么道具和方块都没有！）';
+      lines.push(`• 你的真实背包：${invStr}`);
+    }
+    if (Array.isArray(st.recentActions) && st.recentActions.length) {
+      const aStr = st.recentActions.map((a) => `${a.success ? '✅' : '❌'}${a.name}(${a.message || ''})`).join('；');
+      lines.push(`• 你最近真实动作结果：${aStr}`);
+    }
+    lines.push('• 说话铁律：1) 只描述上面真实存在的物品/位置/行动结果，背包里没火把或没石头就直说没有，绝对不瞎编“墙围好了/火把插上了/石头够了”！2) 如果你刚死掉就老实承认刚挂了正跑回来；3) 如果对方让你执行上面尚未触发的新操作，回复末尾附 [GAME:简洁动作指令]。');
+    return lines.join('\n');
   }
 
-  async handleGameEvent({ game = '', level = 'fun', text = '', telemetry = null } = {}) {
+  async handleGameEvent({ game = '', level = 'fun', text = '', ts = 0, telemetry = null } = {}) {
     if (!this.active || this._ending) return false;
     if (game) {
-      this._activeGameStatus = { game, telemetry: telemetry || this._activeGameStatus?.telemetry || {}, updatedAt: Date.now() };
+      this._activeGameStatus = {
+        game,
+        telemetry: telemetry || this._activeGameStatus?.telemetry || {},
+        recentActions: this._activeGameStatus?.recentActions || [],
+        updatedAt: Date.now(),
+      };
     }
     const clean = String(text || '').trim();
     if (!clean) return false;
 
-    const note = `[游戏实时事件（《${game || '游戏'}》/${level}）：${clean}]`;
     const now = Date.now();
-    const minGapMs = level === 'urgent' ? 6000 : 18000;
+    // 丢弃超过 7 秒的过时游戏播报（绝不在打完架 20 秒后突然喊过时的台词！）
+    if (ts && now - Number(ts) > 7000 && level !== 'critical') return false;
+
+    // 明确主语为你（小鲸鲸）自己角色的状态，彻底消除“把自己的求救误听成对方说的话”！
+    const note = `[游戏实时警报 · 这是你（小鲸鲸）自己的游戏角色刚刚发生的真实状况，不是对方说的！(${game || '游戏'}/${level})：${clean}]`;
+    const isCritical = level === 'critical';
+    const minGapMs = isCritical ? 0 : (level === 'urgent' ? 6000 : 18000);
     const canSpeakNow =
       !this._inSpeech &&
       !this._aiThinking &&
@@ -1399,15 +1485,18 @@ export class RealtimeCallEngine {
       (now - this._lastGameProactiveSpeakAt >= minGapMs);
 
     if (!canSpeakNow) {
-      this._pendingSidecarNotes.push(note);
-      if (this._pendingSidecarNotes.length > 6) this._pendingSidecarNotes.shift();
+      // 只把 critical/urgent 留给下一轮（普通 fun 不堆积过时消息）
+      if (isCritical || level === 'urgent') {
+        this._pendingSidecarNotes.push(note);
+        if (this._pendingSidecarNotes.length > 3) this._pendingSidecarNotes.shift();
+      }
       return false;
     }
 
     this._lastGameProactiveSpeakAt = now;
     this.log(`[call-game] 🎮 主动语音播报游戏事件 (${game}/${level}): ${clean.slice(0, 60)}`);
     await this._runAiTurn(
-      `${note}\n[提示：游戏里刚发生这件事，请立刻用小鲸鲸本人松弛自然的一句短话（<=22字）反应或提醒对方，绝不播音腔，绝不念出括号标签]`,
+      `${note}\n[提示：这是你自己在游戏里刚遇到的真实情况，立刻用第一人称自然简短地说一句（<=18字，比如“卧槽旁边有苦力怕快跑！”或“呜呜我刚被僵尸拍死了，复活跑回来中！”），绝不颠倒主客体，绝不瞎编没发生的事]`,
       { vadEndAt: Date.now(), asrMs: 0, userUtterance: '', isWatchAlong: true }
     );
     return true;

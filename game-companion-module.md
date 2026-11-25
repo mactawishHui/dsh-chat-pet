@@ -49,9 +49,9 @@ flowchart LR
 
 | 文件 | 职责 | 平台耦合度 |
 | --- | --- | --- |
-| [`templates/game-hub.mjs`](./templates/game-hub.mjs) | 统一游戏大脑 & 标准 `VedalAI/neuro-sdk` v1 WebSocket 服务端（支持 `startup` / `context` / `actions/register` / `actions/unregister` / `actions/force` / `action` / `action/result` + `actions/reregister_all`，严格 JSON Schema 校验、高光语音推送、对局摘要写回记忆） | **零耦合** |
+| [`templates/game-hub.mjs`](./templates/game-hub.mjs) | 统一游戏大脑 & 标准 `VedalAI/neuro-sdk` v1 WebSocket 服务端（`<1ms` 明确指令零 LLM 快路由直出、严格 JSON Schema 校验、`critical` 阵亡零冷却必达高光推送、真实执行成败回执杜绝预判吹牛、45s 人类指令防自主抢占、对局摘要写回记忆） | **零耦合** |
 | [`templates/mc-server-manager.mjs`](./templates/mc-server-manager.mjs) | 零闲置内存 MC 1.21.1 自休眠托管器 & TCP 敲门代理（隐藏 PaperMC 至 `127.0.0.1:25566`、原生 VarInt MOTD 响应、Portal IP 敲门防公网扫描与熊孩子、systemd cgroup v2 内存硬隔离、10 分钟无人自动 `/save-all` + `/stop`） | 仅管理 PaperMC |
-| [`templates/mc-companion.mjs`](./templates/mc-companion.mjs) | 基于 `mineflayer` (`1.21.1`) 的标准 Neuro-API 队友客户端（中英文方块/物品别名映射、快环自保反射、17 个白名单安全技能、严禁 LLM 动态 `eval`、每步寻路/挖掘严格超时防卡死） | 仅适配 MC 1.21.1 |
+| [`templates/mc-companion.mjs`](./templates/mc-companion.mjs) | 基于 `mineflayer` (`1.21.1`) 的标准 Neuro-API 队友客户端 V2（**200ms 5Hz 毫秒级快环生存战斗**：疾跑追击/自动穿甲举盾/全模式贴脸自卫/残血拉扯回血/苦力怕防爆放风筝 + **1.5s 真实环境/动物/怪物/背包/成败账本遥测** + 17 个白名单安全技能零 `eval`） | 仅适配 MC 1.21.1 |
 | [`templates/pet-game-link.mjs`](./templates/pet-game-link.mjs) | 跨平台（Windows/macOS/Linux）零依赖本机桥接器（纯 Node 内置模块，免 `npm install`），将本机明文 `ws://127.0.0.1:8000` 安全 TLS 转发至云端 `wss://<host>:8443/ws/neuro?token=...` | **零耦合** |
 
 ---

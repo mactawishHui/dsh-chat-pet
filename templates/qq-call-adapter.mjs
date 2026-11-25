@@ -789,7 +789,7 @@ class NativeQQCallDaemon {
       },
       log,
       onSidecarTask: async (task) => {
-        if (task.kind === 'game') {
+        if (task.kind === 'game' || task.kind === 'game_fast') {
           try {
             const gameBase = `http://127.0.0.1:${Number(cfg.raw?.game?.port || 3350)}`;
             const token = readConsoleToken();
@@ -799,11 +799,18 @@ class NativeQQCallDaemon {
                 'content-type': 'application/json',
                 ...(token ? { 'X-Console-Token': token } : {}),
               },
-              body: JSON.stringify({ from: callerName, text: task.query, via: 'voice' }),
+              body: JSON.stringify({
+                from: callerName,
+                text: task.query,
+                via: task.kind === 'game_fast' ? 'voice_fast' : 'voice',
+              }),
               signal: AbortSignal.timeout(8000),
             });
             const d = await r.json().catch(() => null);
-            return d?.reply || '';
+            // 关键：正常开始执行时不返回重复播报文本，避免 4 秒后莫名再来第二句！
+            // 只有真正立即失败（如背包没火把/方块不够/附近没怪）或唤醒 MC 时才返回给语音如实汇报！
+            if (d?.needsVoiceReport && d?.reply) return d.reply;
+            return '';
           } catch (err) {
             log(`[call-adapter] 游戏指令转发失败: ${err?.message ?? err}`);
             return '';

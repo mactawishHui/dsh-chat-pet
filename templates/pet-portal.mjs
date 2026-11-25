@@ -509,7 +509,7 @@ function renderPortalHtml() {
         </div>
         <div class="cmdBox" style="margin-bottom:10px">
           服务器地址：<code id="mcAddrText">-</code> <button id="btnCopyMcAddr" class="sm" style="margin-left:6px;padding:3px 8px">复制</button><br/>
-          游戏版本：<code>Minecraft Java 1.21.1</code> · 小鲸鲸 ID：<code>xiaojingjing</code><br/>
+          游戏版本：<code>Minecraft Java 1.21.1 ~ 26.3+（ViaVersion 自动跨版本兼容）</code> · 小鲸鲸 ID：<code>xiaojingjing</code><br/>
           当前在线：<span id="mcPlayersText">无</span> · <span id="mcIdleText">待机</span>
         </div>
         <div class="row" style="margin-bottom:8px">

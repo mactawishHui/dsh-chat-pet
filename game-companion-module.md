@@ -80,6 +80,10 @@ BUILD_URL=$(curl -fsSL -H "User-Agent: dsh-pet-mc/1.0" \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["downloads"]["server:default"]["url"])')
 curl -fSL -C - -H "User-Agent: dsh-pet-mc/1.0" -o /opt/mc-server/paper-1.21.1.jar "$BUILD_URL"
 
+# 安装 ViaVersion（放进 /opt/mc-server/plugins/，支持 Minecraft 1.21.1 ~ 26.3+ 新版客户端直连，无需降级客户端）
+mkdir -p /opt/mc-server/plugins
+# 从 Modrinth / Hangar 下载最新 ViaVersion >= 5.12.x 放入 plugins/
+
 # 安装游戏网关与 Mineflayer 依赖（Node.js 18/20/22/24 均原生支持）
 cd /opt/game-hub
 npm init -y && npm pkg set type=module

@@ -680,7 +680,7 @@ export class McServerManager {
               ? '§e🐳 小鲸鲸的秘密基地 §7[正在唤醒世界，马上就好…]'
               : '§b🐳 小鲸鲸的秘密基地 §7[休眠省电中 · 点击进入自动唤醒]';
             const statusJson = JSON.stringify({
-              version: { name: 'Paper 1.21.1', protocol: handshake.protocol || 767 },
+              version: { name: 'Paper 1.21.1-26.3', protocol: handshake.protocol || 767 },
               players: { max: 8, online: 0, sample: [{ name: this.botName, id: '00000000-0000-0000-0000-000000000001' }] },
               description: { text: desc },
             });
